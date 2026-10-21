@@ -600,7 +600,7 @@ public class MainActivity : Activity
         card.AddView(_log, new LinearLayout.LayoutParams(-1, Dp(320)));
 
         _hex = MakeSwitch("Monitor HEX (octeți TX / RX bruți)", false);
-        _hex.CheckedChange += (_, e) => { AndroidFtdiInterface.Sniff = e.IsChecked; while (AndroidFtdiInterface.Traffic.TryDequeue(out _)) { } };
+        _hex.CheckedChange += (sender, e) => { AndroidFtdiInterface.Sniff = e.IsChecked; while (AndroidFtdiInterface.Traffic.TryDequeue(out var ignored)) { } };
         card.AddView(_hex, MatchWrap(top: 8));
 
         var keys = HRow();
