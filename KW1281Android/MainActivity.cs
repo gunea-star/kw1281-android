@@ -228,7 +228,7 @@ public class MainActivity : Activity
         var g = new GradientDrawable(GradientDrawable.Orientation.TlBr!,
             new int[] { Color.ParseColor("#1C1208").ToArgb(), Color.ParseColor("#121621").ToArgb(), Color.ParseColor("#0D1018").ToArgb() });
         g.SetCornerRadius(Dp(20));
-        g.SetStroke(Dp(1), Color.ParseColor("#3A2410").ToArgb());
+        g.SetStroke(Dp(1), Color.ParseColor("#3A2410"));
         box.Background = g;
 
         var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
@@ -242,8 +242,8 @@ public class MainActivity : Activity
         var titles = new LinearLayout(this) { Orientation = Orientation.Vertical };
         titles.SetPadding(Dp(14), 0, 0, 0);
         var brand = new SpannableString("STREET TUNING PARTS");
-        brand.SetSpan(new ForegroundColorSpan(CText.ToArgb()), 0, 14, SpanTypes.ExclusiveExclusive);
-        brand.SetSpan(new ForegroundColorSpan(CAccent.ToArgb()), 14, brand.Length(), SpanTypes.ExclusiveExclusive);
+        brand.SetSpan(new ForegroundColorSpan(CText), 0, 14, SpanTypes.ExclusiveExclusive);
+        brand.SetSpan(new ForegroundColorSpan(CAccent), 14, brand.Length(), SpanTypes.ExclusiveExclusive);
         var t1 = Txt("", 19, CText, bold: true);
         t1.TextFormatted = brand;
         t1.LetterSpacing = 0.04f;
@@ -763,7 +763,7 @@ public class MainActivity : Activity
         var g = new GradientDrawable();
         g.SetColor(c.ToArgb());
         g.SetCornerRadius(Dp(radiusDp));
-        if (stroke is { } s) g.SetStroke(Dp(1), s.ToArgb());
+        if (stroke is { } s) g.SetStroke(Dp(1), s);
         return g;
     }
 
@@ -1082,7 +1082,7 @@ public class MainActivity : Activity
             {
                 var start = _ssb.Length();
                 _ssb.Append(new Java.Lang.String(item.Text + "\n"));
-                _ssb.SetSpan(new ForegroundColorSpan(item.Color.ToArgb()), start, _ssb.Length(), SpanTypes.ExclusiveExclusive);
+                _ssb.SetSpan(new ForegroundColorSpan(item.Color), start, _ssb.Length(), SpanTypes.ExclusiveExclusive);
                 changed = true;
             }
             if (changed)
