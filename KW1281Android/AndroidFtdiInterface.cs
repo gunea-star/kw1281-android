@@ -97,7 +97,9 @@ internal sealed class AndroidFtdiInterface : IInterface
         _portIndex = 1;
 
         Control(SioReset, 0, _portIndex);               // reset
-        Control(SioSetLatencyTimer, Math.Clamp(LatencyMs, 1, 255), _portIndex);
+        // Latenta 1 ms: KW1281 trimite cate UN octet pe rand (complement, sync),
+        // iar cu latenta mare cipul FTDI ii tine prea mult in buffer si ReceiveBlock da timeout.
+        Control(SioSetLatencyTimer, 1, _portIndex);
         Control(SioSetFlowCtrl, 0, _portIndex);         // fara flow control
         SetBaudRate(baudRate);
         ApplyLineSettings();
@@ -135,6 +137,7 @@ internal sealed class AndroidFtdiInterface : IInterface
 
             var n = _conn.BulkTransfer(_epIn, _rxRaw, _rxRaw.Length, slice);
             ThrowIfClosed();
+            // n <= 2 inseamna doar cei 2 octeti de status FTDI, fara date utile.
             if (n > 2) Unpack(n);
 
             lock (_lock)
@@ -170,7 +173,28 @@ internal sealed class AndroidFtdiInterface : IInterface
 
     public void ClearReceiveBuffer()
     {
-        Control(SioReset, 1, _portIndex); // purge RX
+        // 1. Goleste buffer-ul RX din cipul FTDI.
+        Control(SioReset, 1, _portIndex);
+
+        // 2. Goleste octetii care au iesit deja din cip si stau pe magistrala USB.
+        //    Fara pasul asta, resturi din secventa de sincronizare (ex: 01 55 8A)
+        //    raman si strica primul bloc KW1281 citit dupa conectare.
+        try
+        {
+            int n;
+            var guard = 0;
+            do
+            {
+                n = _conn.BulkTransfer(_epIn, _rxRaw, _rxRaw.Length, 20);
+            }
+            while (n > 2 && ++guard < 50);
+        }
+        catch
+        {
+            // la inchidere sau deconectare ignoram
+        }
+
+        // 3. Goleste coada noastra interna.
         lock (_lock) _rx.Clear();
     }
 
