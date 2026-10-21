@@ -101,6 +101,15 @@ public class MainActivity : Activity
     private bool _sawEcu, _sawError;
     private Action? _onFinish;
     private int _group = 1;
+    private readonly List<string> _faults = new();
+    private StreamWriter? _csv;
+    private string? _csvName;
+    private GraphView _graph = null!;
+    private Button _recBtn = null!;
+    private Switch _hex = null!;
+    private static readonly System.Text.RegularExpressions.Regex NumRx = new(@"-?\d+(?:[.,]\d+)?");
+    private static readonly System.Text.RegularExpressions.Regex FaultRx =
+        new(@"^\s*(\d{5}) - (\d{2})-(\d{2})\s*$");
 
     private Thread? _worker;
     private AndroidFtdiInterface? _current;
@@ -109,6 +118,9 @@ public class MainActivity : Activity
     private volatile string? _overlay;
     private ConsoleRouter? _router;
     private UsbPermissionReceiver? _permReceiver;
+    private Updater.InstallReceiver? _installReceiver;
+    private TextView _verText = null!;
+    private bool _updating;
     private readonly SpannableStringBuilder _ssb = new();
 
     // ---------------------------------------------------------------- Vederi
@@ -166,9 +178,23 @@ public class MainActivity : Activity
         else
             RegisterReceiver(_permReceiver, filter);
 
+        _installReceiver = new Updater.InstallReceiver(msg => _ui.Post(() =>
+        {
+            Emit(msg, msg.Contains('✓') ? CGreen : CRed);
+            Toast.MakeText(this, msg, ToastLength.Long)!.Show();
+            _updating = false;
+        }));
+        var instFilter = new IntentFilter(Updater.ActionInstallStatus);
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu)
+            RegisterReceiver(_installReceiver, instFilter, ReceiverFlags.NotExported);
+        else
+            RegisterReceiver(_installReceiver, instFilter);
+        _ui.PostDelayed(() => CheckForUpdate(manual: false), 2500);
+
         Emit("STREET TUNING PARTS • PROGRAMMING", CAccent);
         Emit("Motor: kw1281test v1.0.4 (MIT, Greg Menounos)", CMuted);
         Emit($"Fișiere salvate în: {_workDir}", CMuted);
+        Emit($"Bază coduri eroare: {DtcDatabase.Count} coduri", CMuted);
         Emit("", CMuted);
 
         FindCable();
@@ -184,6 +210,8 @@ public class MainActivity : Activity
     protected override void OnDestroy()
     {
         if (_permReceiver != null) UnregisterReceiver(_permReceiver);
+        if (_installReceiver != null) UnregisterReceiver(_installReceiver);
+        try { _csv?.Dispose(); } catch { }
         base.OnDestroy();
     }
 
@@ -257,6 +285,14 @@ public class MainActivity : Activity
         var sub = Txt("Diagnoză K-Line VAG  •  KW1281 / KWP2000  •  EEPROM & Flash", 12, CMuted);
         sub.SetPadding(0, Dp(12), 0, 0);
         box.AddView(sub);
+
+        var vr = HRow();
+        _verText = Txt($"v{Updater.CurrentName(this)}  (build {Updater.CurrentVersion(this)})", 12, CAccent2, bold: true, mono: true);
+        vr.AddView(_verText, new LinearLayout.LayoutParams(0, -2, 1f));
+        var upd = SmallButton("🔄 Actualizări");
+        upd.Click += (_, _) => CheckForUpdate(manual: true);
+        vr.AddView(upd);
+        box.AddView(vr, MatchWrap(top: 10));
 
         var lp = new LinearLayout.LayoutParams(-1, -2);
         lp.SetMargins(0, 0, 0, Dp(12));
@@ -437,7 +473,7 @@ public class MainActivity : Activity
                 cell.Background = Rounded(CTerm, 14, CLine);
                 cell.SetPadding(Dp(12), Dp(12), Dp(12), Dp(12));
                 _liveLabels[i] = Txt($"Câmp {i + 1}", 11, CMuted, bold: true);
-                _liveCells[i] = Txt("—", 20, CGreen, bold: true, mono: true);
+                _liveCells[i] = Txt("—", 20, GraphView.SeriesColors[i], bold: true, mono: true);
                 cell.AddView(_liveLabels[i]);
                 cell.AddView(_liveCells[i]);
                 var lp = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -446,6 +482,14 @@ public class MainActivity : Activity
             }
             card.AddView(row);
         }
+
+        _graph = new GraphView(this);
+        _graph.Background = Rounded(CTerm, 14, CLine);
+        card.AddView(_graph, new LinearLayout.LayoutParams(-1, Dp(170)) { TopMargin = Dp(10) });
+
+        _recBtn = SmallButton("⏺  Înregistrează CSV");
+        _recBtn.Click += (_, _) => ToggleRecording();
+        card.AddView(_recBtn, MatchWrap(top: 8));
 
         _liveRaw = Txt("", 11, CMuted, mono: true);
         _liveRaw.SetPadding(0, Dp(8), 0, 0);
@@ -468,7 +512,7 @@ public class MainActivity : Activity
         (string Icon, string Title, string Sub, Action Run)[] tiles =
         [
             ("🔎", "Identificare", "ReadIdent", () => Execute("ReadIdent")),
-            ("⚠️", "Coduri eroare", "ReadFaultCodes", () => Execute("ReadFaultCodes")),
+            ("⚠️", "Coduri eroare", "cu descriere RO", ReadFaults),
             ("🧹", "Șterge erori", "ClearFaultCodes", () => Confirm("Ștergi codurile de eroare din modulul " + _address + "?", () => Execute("ClearFaultCodes"))),
             ("📈", "Live Data", "GroupRead", StartLive),
             ("🔑", "PIN / SKC", "GetSKC (bord 17)", () => Execute("GetSKC")),
@@ -554,6 +598,10 @@ public class MainActivity : Activity
             e.Handled = false;
         };
         card.AddView(_log, new LinearLayout.LayoutParams(-1, Dp(320)));
+
+        _hex = MakeSwitch("Monitor HEX (octeți TX / RX bruți)", false);
+        _hex.CheckedChange += (_, e) => { AndroidFtdiInterface.Sniff = e.IsChecked; while (AndroidFtdiInterface.Traffic.TryDequeue(out _)) { } };
+        card.AddView(_hex, MatchWrap(top: 8));
 
         var keys = HRow();
         foreach (var (label, key, ch) in new[] {
@@ -947,11 +995,163 @@ public class MainActivity : Activity
         });
     }
 
+    private void ReadFaults()
+    {
+        lock (_faults) _faults.Clear();
+        Execute("ReadFaultCodes", Array.Empty<string>(), onFinish: () =>
+        {
+            List<string> list;
+            lock (_faults) list = _faults.ToList();
+            var msg = list.Count == 0
+                ? "Nu s-au primit coduri de eroare (verifică consola)."
+                : string.Join("\n\n", list);
+            new AlertDialog.Builder(this)
+                .SetTitle($"⚠️  Coduri eroare • modul {_address}")
+                .SetMessage(msg)
+                .SetPositiveButton("OK", (_, _) => { })
+                .SetNeutralButton("Șterge erorile", (_, _) =>
+                    Confirm("Ștergi codurile de eroare din modulul " + _address + "?", () => Execute("ClearFaultCodes")))
+                .Show();
+        });
+    }
+
+    private static string DescribeFault(int code, int status, bool intermittent)
+    {
+        if (code == 65535 && status == 8)
+            return "✓ Nicio eroare memorată";
+        var head = $"{code:D5}";
+        var d = DtcDatabase.Find(code);
+        if (d is { } v && v.Obd.Length > 0) head += $" ({v.Obd})";
+        var desc = d?.Text ?? "Cod necunoscut în baza de date";
+        var tag = intermittent ? "intermitent" : "permanent";
+        return $"{head}: {desc}\nTip {status:D2} • {tag}";
+    }
+
+    private void ToggleRecording()
+    {
+        if (_csv == null)
+        {
+            _csvName = $"live_{_address}_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            _csv = new StreamWriter(System.IO.Path.Combine(_workDir, _csvName), false, new UTF8Encoding(true)) { AutoFlush = true };
+            _csv.WriteLine($"# STP Programming - Live Data modul {_address}");
+            _csv.WriteLine("Ora;Grup;Camp 1;Camp 2;Camp 3;Camp 4");
+            _recBtn.Text = "⏹  Oprește înregistrarea";
+            _recBtn.SetTextColor(CRed);
+            Emit($"Înregistrare pornită: {_csvName}", CRed);
+        }
+        else
+        {
+            try { _csv.Dispose(); } catch { }
+            _csv = null;
+            _recBtn.Text = "⏺  Înregistrează CSV";
+            _recBtn.SetTextColor(CText);
+            Emit($"Salvat: {_csvName} (îl găsești la Exportă)", CGreen);
+        }
+    }
+
+    private void DrainHex()
+    {
+        if (!AndroidFtdiInterface.Sniff) return;
+        var sb = new StringBuilder();
+        bool? dir = null;
+        var n = 0;
+        void Flush()
+        {
+            if (sb.Length == 0 || dir == null) return;
+            Emit((dir.Value ? "TX ▶ " : "RX ◀ ") + sb.ToString().TrimEnd(), dir.Value ? CCyan : CGreen);
+            sb.Clear();
+            n = 0;
+        }
+        var guard = 0;
+        while (guard++ < 400 && AndroidFtdiInterface.Traffic.TryDequeue(out var t))
+        {
+            if (dir != t.Tx) { Flush(); dir = t.Tx; }
+            foreach (var b in t.Data)
+            {
+                sb.Append(b.ToString("X2")).Append(' ');
+                if (++n == 16) Flush();
+            }
+        }
+        Flush();
+    }
+
+    // ================================================================ Actualizare OTA
+
+    private async void CheckForUpdate(bool manual)
+    {
+        if (_updating) return;
+        try
+        {
+            if (manual) Emit("Verific actualizări…", CMuted);
+            var rel = await Updater.CheckAsync();
+            var current = Updater.CurrentVersion(this);
+            if (rel == null || rel.Version <= current)
+            {
+                if (manual)
+                {
+                    Emit($"Ai ultima versiune (build {current}).", CGreen);
+                    Toast.MakeText(this, "Ai ultima versiune ✓", ToastLength.Short)!.Show();
+                }
+                return;
+            }
+
+            var notes = string.IsNullOrWhiteSpace(rel.Notes) ? "" : "\n\n" + rel.Notes.Trim();
+            var size = rel.Size > 0 ? $" • {rel.Size / 1048576.0:0.0} MB" : "";
+            new AlertDialog.Builder(this)
+                .SetTitle("🔄  Versiune nouă disponibilă")
+                .SetMessage($"{rel.Tag} (build {rel.Version}){size}\nAi acum build {current}.{notes}")
+                .SetPositiveButton("Actualizează", (_, _) => DownloadAndInstall(rel))
+                .SetNegativeButton("Mai târziu", (_, _) => { })
+                .Show();
+        }
+        catch (Exception ex)
+        {
+            if (manual)
+            {
+                Emit($"Nu pot verifica actualizările: {ex.Message}", CRed);
+                Emit("Verifică internetul și dacă repository-ul GitHub e public.", CMuted);
+            }
+        }
+    }
+
+    private async void DownloadAndInstall(Updater.Release rel)
+    {
+        if (_worker is { IsAlive: true })
+        {
+            Toast.MakeText(this, "Așteaptă să se termine operația curentă.", ToastLength.Long)!.Show();
+            return;
+        }
+        if (!Updater.EnsureInstallPermission(this))
+        {
+            Toast.MakeText(this, "Permite instalarea din această aplicație, apoi apasă din nou Actualizări.", ToastLength.Long)!.Show();
+            return;
+        }
+        _updating = true;
+        try
+        {
+            var dir = System.IO.Path.Combine(CacheDir!.AbsolutePath, "update");
+            Directory.CreateDirectory(dir);
+            var apk = System.IO.Path.Combine(dir, "STP-Programming.apk");
+            Emit($"Descarc {rel.Tag}…", CAccent2);
+            await Updater.DownloadAsync(rel.ApkUrl, apk, pct => _ui.Post(() => _verText.Text = $"Descărcare {pct}%"));
+            _verText.Text = "Instalare…";
+            Emit("Descărcat. Confirmă instalarea în fereastra Android.", CAccent2);
+            Updater.Install(this, apk);
+        }
+        catch (Exception ex)
+        {
+            _updating = false;
+            _verText.Text = $"v{Updater.CurrentName(this)}  (build {Updater.CurrentVersion(this)})";
+            Emit($"Actualizare eșuată: {ex.Message}", CRed);
+        }
+    }
+
     private void StartLive()
     {
         _liveCard.Visibility = ViewStates.Visible;
         for (var i = 0; i < 4; i++) { _liveCells[i].Text = "—"; _liveLabels[i].Text = $"Câmp {i + 1}"; }
         _liveRaw.Text = "Pornire…";
+        _graph.Clear();
         var args = new List<string> { _group.ToString() };
         if (_fastInit.Checked) args.Add("fastinit");
         Execute("GroupRead", args.ToArray());
@@ -1045,6 +1245,15 @@ public class MainActivity : Activity
     {
         var l = line.TrimEnd();
         Color col = CText;
+        var fm = FaultRx.Match(l);
+        if (fm.Success)
+        {
+            var text = DescribeFault(int.Parse(fm.Groups[1].Value), int.Parse(fm.Groups[2].Value), fm.Groups[3].Value == "10");
+            lock (_faults) _faults.Add(text);
+            Emit(l, CRed);
+            Emit("      → " + text.Replace("\n", "\n        "), CAccent2);
+            return;
+        }
         if (l.StartsWith("ECU:", StringComparison.Ordinal))
         {
             _sawEcu = true;
@@ -1076,6 +1285,7 @@ public class MainActivity : Activity
     {
         try
         {
+            DrainHex();
             // Consola
             var changed = false;
             while (_pending.TryDequeue(out var item))
@@ -1143,6 +1353,23 @@ public class MainActivity : Activity
             if (int.TryParse(text[6..idx].Trim(), out var g)) { _group = g; UpdateGroupLabel(); }
             var body = text[(idx + 1)..].Trim();
             var parts = body.Split(" | ");
+            var nums = new float?[4];
+            for (var i = 0; i < Math.Min(4, parts.Length); i++)
+            {
+                var m = NumRx.Match(parts[i]);
+                if (m.Success && float.TryParse(m.Value.Replace(',', '.'), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var f)) nums[i] = f;
+            }
+            _graph.Add(nums);
+            if (_csv != null)
+            {
+                try
+                {
+                    _csv.WriteLine($"{DateTime.Now:HH:mm:ss.fff};{_group};" +
+                        string.Join(';', Enumerable.Range(0, 4).Select(i => i < parts.Length ? parts[i].Trim().Replace(';', ',') : "")));
+                }
+                catch { }
+            }
             for (var i = 0; i < 4; i++)
             {
                 if (i < parts.Length)

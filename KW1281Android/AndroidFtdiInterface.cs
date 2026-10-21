@@ -53,6 +53,19 @@ internal sealed class AndroidFtdiInterface : IInterface
     public static long TxBytes => Interlocked.Read(ref _txBytes);
     public static long RxBytes => Interlocked.Read(ref _rxBytes);
 
+    // Monitor trafic HEX (TX/RX brut)
+    public static volatile bool Sniff;
+    public static readonly System.Collections.Concurrent.ConcurrentQueue<(bool Tx, byte[] Data)> Traffic = new();
+
+    private static void Capture(bool tx, byte[] src, int offset, int count)
+    {
+        if (!Sniff || count <= 0) return;
+        var copy = new byte[count];
+        Buffer.BlockCopy(src, offset, copy, 0, count);
+        Traffic.Enqueue((tx, copy));
+        while (Traffic.Count > 4000 && Traffic.TryDequeue(out _)) { }
+    }
+
     public AndroidFtdiInterface(UsbDeviceConnection connection, UsbDevice device, int baudRate)
     {
         _conn = connection;
@@ -143,6 +156,7 @@ internal sealed class AndroidFtdiInterface : IInterface
             Buffer.BlockCopy(bytes, offset, _txChunk, 0, len);
             var written = _conn.BulkTransfer(_epOut, _txChunk, len, WriteTimeout);
             if (written < 0) throw new TimeoutException("Timeout la scrierea pe K-line.");
+            Capture(true, _txChunk, 0, written);
             offset += written;
             Interlocked.Add(ref _txBytes, written);
         }
@@ -223,6 +237,7 @@ internal sealed class AndroidFtdiInterface : IInterface
                 var len = Math.Min(_packetSize, n - off);
                 for (var i = 2; i < len; i++) _rx.Enqueue(_rxRaw[off + i]);
                 if (len > 2) Interlocked.Add(ref _rxBytes, len - 2);
+                if (len > 2) Capture(false, _rxRaw, off + 2, len - 2);
             }
         }
     }

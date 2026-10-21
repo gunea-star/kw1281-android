@@ -33,6 +33,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Baza de date cu descrieri pentru codurile de eroare -->
+    <EmbeddedResource Include="Data\dtc_ro.csv" LogicalName="STP.dtc_ro.csv" />
+    <EmbeddedResource Include="Data\dtc_en.csv" LogicalName="STP.dtc_en.csv" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="System.IO.Ports" Version="10.0.13" />
   </ItemGroup>
 

@@ -2,7 +2,11 @@ name: Build APK
 
 on:
   push:
+    branches: [ main ]
   workflow_dispatch:
+
+permissions:
+  contents: write   # necesar pentru a crea Release-ul (actualizarea OTA)
 
 jobs:
   build:
@@ -19,6 +23,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Numar versiune
+        run: |
+          echo "BUILD=$((1000 + ${{ github.run_number }}))" >> $GITHUB_ENV
+
       - name: Instaleaza workload Android
         run: dotnet workload install android
 
@@ -27,12 +35,41 @@ jobs:
           dotnet build KW1281Android/KW1281Android.csproj -t:InstallAndroidDependencies
           -f net10.0-android -p:AndroidSdkDirectory=$ANDROID_HOME -p:AcceptAndroidSDKLicenses=True
 
+      - name: Cheia de semnare (din Secrets)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/stp.p12"
+            echo "SIGN_ARGS=-p:AndroidKeyStore=true -p:AndroidSigningKeyStore=$RUNNER_TEMP/stp.p12 -p:AndroidSigningKeyAlias=stp -p:AndroidSigningStorePass=env:KEYSTORE_PASSWORD -p:AndroidSigningKeyPass=env:KEYSTORE_PASSWORD" >> $GITHUB_ENV
+            echo "Semnez cu cheia STP."
+          else
+            echo "SIGN_ARGS=" >> $GITHUB_ENV
+            echo "::warning::Lipseste KEYSTORE_BASE64 - APK semnat cu cheie de test; actualizarile OTA nu vor merge."
+          fi
+
       - name: Compileaza APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: >
           dotnet publish KW1281Android/KW1281Android.csproj -c Release -f net10.0-android
-          -p:AndroidSdkDirectory=$ANDROID_HOME -o out
+          -p:AndroidSdkDirectory=$ANDROID_HOME
+          -p:ApplicationVersion=$BUILD -p:ApplicationDisplayVersion=1.1.$BUILD
+          $SIGN_ARGS -o out
+
+      - name: Pregateste APK
+        run: cp out/*-Signed.apk "STP-Programming-1.1.$BUILD.apk"
 
       - uses: actions/upload-artifact@v4
         with:
           name: KW1281Android-apk
-          path: out/*-Signed.apk
+          path: STP-Programming-*.apk
+
+      - name: Publica Release (OTA)
+        if: ${{ env.SIGN_ARGS != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MSG="$(git log -1 --pretty=%B)"
+          gh release create "v1.1.$BUILD" "STP-Programming-1.1.$BUILD.apk" \
+            --title "STP Programming 1.1.$BUILD" --notes "$MSG" --latest

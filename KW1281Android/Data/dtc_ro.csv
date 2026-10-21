@@ -1,0 +1,114 @@
+# Cod VAG;Cod OBD;Descriere in romana
+00281;;Senzor viteză vehicul (G68)
+00282;;Actuator clapetă accelerație (V60)
+00283;;Senzor turație roată ABS, față stânga (G47)
+00285;;Senzor turație roată ABS, față dreapta (G45)
+00287;;Senzor turație roată ABS, spate dreapta (G44)
+00290;;Senzor turație roată ABS, spate stânga (G46)
+00300;;Senzor temperatură ulei cutie automată (G93)
+00301;;Pompă retur ABS (V39)
+00302;;Releu supape ABS (J106)
+00303;;Comutator computer de bord (E91)
+00305;;Semnal consum combustibil
+00513;;Senzor turație motor (G28)
+00515;;Senzor Hall ax cu came (G40)
+00518;;Senzor poziție clapetă accelerație (G69)
+00519;;Senzor presiune galerie admisie (G71)
+00522;;Senzor temperatură lichid răcire (G62)
+00523;;Senzor temperatură aer admisie (G42)
+00525;;Sondă lambda (G39)
+00526;;Contact lumini frână (F)
+00528;;Senzor presiune atmosferică (F96)
+00529;;Semnal intrare turație motor
+00530;;Senzor poziție actuator clapetă (G88)
+00532;;Tensiune alimentare B+
+00533;;Reglaj turație ralanti
+00537;;Reglaj amestec sondă lambda
+00542;;Senzor cursă ac injector (G80)
+00546;;Linie comunicație date
+00550;;Reglaj început injecție
+00553;;Debitmetru aer (G70)
+00561;;Adaptare amestec
+00562;;Senzor nivel și temperatură ulei (G266)
+00575;;Presiune galerie admisie
+00588;;Aprinzător airbag șofer (N95)
+00589;;Aprinzător airbag pasager 1 (N131)
+00668;;Tensiune alimentare borna 30
+00750;;Circuit martor defect (MIL)
+00771;;Senzor nivel combustibil (G)
+00778;;Senzor unghi volan (G85)
+00779;;Senzor temperatură exterioară (G17)
+00792;;Presostat climatizare (F129)
+01039;;Senzor temperatură lichid răcire pentru bord (G2)
+01044;;Codare greșită a modulului
+01049;;Tensiune alimentare borna 50
+01086;;Senzor viteză pentru vitezometru (G22)
+01087;;Setări de bază neefectuate
+01117;;Semnal sarcină alternator, borna DF
+01126;;Semnal turație motor
+01128;;Bobină cititor imobilizator (D2)
+01130;;Funcționare ABS
+01134;;Sirenă alarmă (H12)
+01135;;Senzori monitorizare habitaclu
+01166;;Semnal cuplu motor
+01176;;Cheie
+01177;;Calculator motor
+01179;;Programare cheie greșită
+01196;;Magistrală date motor / cutie
+01200;;Alimentare supape ABS
+01201;;Alimentare pompă ABS
+01202;;Linie diagnoză
+01208;;Set date VIN modificat
+01237;;Supapă oprire combustibil (N109)
+01249;;Injector cilindru 1 (N30)
+01250;;Injector cilindru 2 (N31)
+01251;;Injector cilindru 3 (N32)
+01252;;Injector cilindru 4 (N33)
+01259;;Releu pompă combustibil (J17)
+01262;;Supapă control presiune turbo (N75)
+01265;;Supapă EGR (N18)
+01266;;Releu bujii incandescente (J52)
+01268;;Regulator cantitate combustibil (N146)
+01269;;Supapă început injecție (N108)
+01271;;Motor clapetă temperatură (V68)
+01272;;Motor clapetă centrală aer (V70)
+01273;;Ventilator aer proaspăt (V2)
+01274;;Motor clapetă debit aer (V71)
+01276;;Pompă hidraulică ABS (V64)
+01299;;Interfață diagnoză magistrală date (J533)
+01304;;Radio
+01312;;Magistrală date tracțiune (CAN motor)
+01314;;Calculator motor
+01315;;Calculator cutie de viteze
+01316;;Calculator ABS
+01317;;Calculator bord (J285)
+01321;;Calculator airbag (J234)
+01324;;Calculator tracțiune integrală (J492)
+01327;;Calculator senzori parcare (J446)
+01330;;Calculator central confort (J393)
+01331;;Modul ușă șofer (J386)
+01332;;Modul ușă pasager (J387)
+01333;;Modul ușă spate stânga (J388)
+01334;;Modul ușă spate dreapta (J389)
+01336;;Magistrală date confort
+65535;;Eroare memorie internă a modulului
+17564;;Senzor presiune absolută galerie: întrerupere sau scurt la masă
+17569;P1161;Senzor temperatură galerie G72: întrerupere sau scurt la plus
+19561;P3105;Supapă clapetă galerie admisie N239: întrerupere sau scurt la masă
+17655;P1247;Senzor cursă ac injector: întrerupere sau scurt la plus
+17762;P1354;Senzor poziție piston reglaj: defect circuit electric
+17971;P1563;Regulator cantitate combustibil: limită inferioară atinsă
+17978;P1570;Calculator motor blocat de imobilizator
+18047;P1639;Senzori poziție pedală accelerație 1 și 2: semnal neplauzibil
+17931;P1523;Semnal impact de la calculatorul airbag: neplauzibil
+18058;P1650;Magistrală tracțiune: lipsă mesaj de la bord
+17966;P1558;Actuator clapetă G186: defect electric
+18043;P1635;Magistrală tracțiune: lipsă mesaj de la climatizare
+17951;P1543;Senzor unghi 1 actuator clapetă G187: semnal prea mic
+17580;P1172;Senzor unghi 2 actuator clapetă G188: semnal prea mic
+16622;P0238;Senzor presiune turbo: semnal prea mare
+18057;P1649;Magistrală tracțiune: lipsă mesaj de la ABS
+16618;P0234;Reglaj presiune turbo: limită superioară depășită (supraalimentare)
+17698;P1290;Senzor temperatură lichid ieșire radiator G83: semnal prea mare
+16497;P0113;Senzor temperatură aer admisie G42: semnal prea mare
+16502;P0118;Senzor temperatură lichid răcire G62: semnal prea mare
