@@ -930,45 +930,16 @@ public class MainActivity : Activity
             _log.Parent?.RequestDisallowInterceptTouchEvent(true);
             e.Handled = false;
         };
-        card.AddView(_log, new LinearLayout.LayoutParams(-1, Dp(150)));
+        card.AddView(_log, new LinearLayout.LayoutParams(-1, Dp(170)));
 
-        var keys = HRow();
-        foreach (var (label, key, ch) in new[] {
-                     ("Y", ConsoleKey.Y, 'y'), ("N", ConsoleKey.N, 'n'), ("Q", ConsoleKey.Q, 'q'),
-                     ("▲", ConsoleKey.UpArrow, '\0'), ("▼", ConsoleKey.DownArrow, '\0') })
-        {
-            var b = SmallButton(label);
-            b.Click += (_, _) => { AppConsole.PushKey(key, ch); Emit($"> {label}", CAccent2); };
-            keys.AddView(b, new LinearLayout.LayoutParams(0, -2, 1f));
-        }
-        var clear = SmallButton("🗑");
+        var row = HRow();
+        var clear = SmallButton("🗑  Curăță");
         clear.Click += (_, _) => { _ssb.Clear(); _log.TextFormatted = _ssb; };
-        keys.AddView(clear, new LinearLayout.LayoutParams(0, -2, 1f));
-        card.AddView(keys, MatchWrap(top: 8));
-
-        var inRow = HRow();
-        _input = Field("Răspuns text pentru program");
-        inRow.AddView(_input, new LinearLayout.LayoutParams(0, -2, 1f));
-        var send = SmallButton("Trimite");
-        send.Click += (_, _) =>
-        {
-            var line = _input.Text ?? "";
-            foreach (var c in line)
-            {
-                var k = char.IsAsciiLetter(c) ? Enum.Parse<ConsoleKey>(char.ToUpperInvariant(c).ToString())
-                    : char.IsAsciiDigit(c) ? Enum.Parse<ConsoleKey>("D" + c) : ConsoleKey.Spacebar;
-                AppConsole.PushKey(k, c);
-            }
-            AppConsole.PushKey(ConsoleKey.Enter, '\r');
-            Emit("> " + line, CAccent2);
-            _input.Text = "";
-        };
-        inRow.AddView(send);
-        card.AddView(inRow, MatchWrap(top: 6));
-
+        row.AddView(clear);
         var stop = BigButton("■  STOP OPERAȚIE", CRed);
         stop.Click += (_, _) => StopAll();
-        card.AddView(stop, MatchWrap(top: 10));
+        row.AddView(stop, new LinearLayout.LayoutParams(0, -2, 1f) { LeftMargin = Dp(8) });
+        card.AddView(row, MatchWrap(top: 8));
         return _lastWrap;
     }
 
