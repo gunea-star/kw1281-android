@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-feature android:name="android.hardware.usb.host" android:required="true" />
-  <application android:label="KW1281 Android"
+  <application android:label="STP Programming"
+               android:icon="@mipmap/ic_launcher"
+               android:roundIcon="@mipmap/ic_launcher"
                android:allowBackup="false"
                android:supportsRtl="true" />
 </manifest>

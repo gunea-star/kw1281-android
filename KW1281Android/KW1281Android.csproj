@@ -11,7 +11,7 @@
     <RootNamespace>KW1281Android</RootNamespace>
     <AssemblyName>KW1281Android</AssemblyName>
     <ApplicationId>ro.kw1281test.android</ApplicationId>
-    <ApplicationTitle>KW1281 Android</ApplicationTitle>
+    <ApplicationTitle>STP Programming</ApplicationTitle>
     <ApplicationDisplayVersion>1.0.4</ApplicationDisplayVersion>
     <ApplicationVersion>104</ApplicationVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>

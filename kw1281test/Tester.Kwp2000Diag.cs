@@ -1,4 +1,4 @@
-﻿using BitFab.KW1281Test.Blocks;
+using BitFab.KW1281Test.Blocks;
 using BitFab.KW1281Test.Kwp2000;
 using BitFab.KW1281Test.Logging;
 using System;
@@ -218,9 +218,9 @@ internal partial class Tester
         {
             while (true)
             {
-                if (Console.KeyAvailable)
+                if (AppConsole.KeyAvailable)
                 {
-                    var keyInfo = Console.ReadKey(intercept: true);
+                    var keyInfo = AppConsole.ReadKey(intercept: true);
                     if (keyInfo.Key == ConsoleKey.UpArrow)
                     {
                         if (groupNumber < 255)
@@ -283,12 +283,12 @@ internal partial class Tester
     // the file log still records one line per refresh.
     private static void GroupReadOverlay(string message)
     {
-        (int left, int top) = Console.GetCursorPosition();
-        Console.SetCursorPosition(0, top);
+        (int left, int top) = AppConsole.GetCursorPosition();
+        AppConsole.SetCursorPosition(0, top);
         if (left > 0)
         {
             Log.Write(new string(' ', left), LogDest.Console);
-            Console.SetCursorPosition(0, top);
+            AppConsole.SetCursorPosition(0, top);
         }
         Log.Write(message, LogDest.Console);
         Log.WriteLine(message, LogDest.File);
@@ -601,7 +601,7 @@ internal partial class Tester
             var testNumber = 1;
 
             // Keep the K-line alive on a background thread while we BLOCK on Console.ReadKey.
-            // ReadKey MUST be called directly: a non-blocking Console.KeyAvailable poll that
+            // ReadKey MUST be called directly: a non-blocking AppConsole.KeyAvailable poll that
             // never calls ReadKey would leave the prompt unanswerable.
             using var keepAlive = new BackgroundKeepAlive(
                 () => StartRoutine(d, AdaptRoutineRead, OutputTestSub));
@@ -613,7 +613,7 @@ internal partial class Tester
                 ConsoleKeyInfo k;
                 try
                 {
-                    do { k = Console.ReadKey(intercept: true); }
+                    do { k = AppConsole.ReadKey(intercept: true); }
                     while (k.Key != ConsoleKey.N && k.Key != ConsoleKey.Q);
                 }
                 finally
@@ -793,9 +793,9 @@ internal partial class Tester
         {
             while (true)
             {
-                if (Console.KeyAvailable)
+                if (AppConsole.KeyAvailable)
                 {
-                    var keyInfo = Console.ReadKey(intercept: true);
+                    var keyInfo = AppConsole.ReadKey(intercept: true);
                     if (keyInfo.Key == ConsoleKey.UpArrow)
                     {
                         if (groupNumber < 255)

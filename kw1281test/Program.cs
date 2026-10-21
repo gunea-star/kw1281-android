@@ -422,7 +422,7 @@ class Program
                     confirmChecksumCorrection: message =>
                     {
                         Console.Write($"{message} Correct them now? [y/N] ");
-                        var key = Console.ReadKey();
+                        var key = AppConsole.ReadKey();
                         Console.WriteLine();
                         return key.Key == ConsoleKey.Y;
                     },

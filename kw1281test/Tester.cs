@@ -69,10 +69,10 @@ internal partial class Tester
     {
         using KW1281KeepAlive keepAlive = new(_kwp1281);
 
-        // Console.ReadKey() only works on a real console; when stdin is redirected (e.g. a
+        // AppConsole.ReadKey() only works on a real console; when stdin is redirected (e.g. a
         // GUI driving this process over piped streams) it throws/hangs. In that case fall
         // back to line-based commands over stdin ("N"/"Q") instead of raw keypresses.
-        bool interactive = !Console.IsInputRedirected;
+        bool interactive = !AppConsole.IsInputRedirected;
 
         while (true)
         {
@@ -92,7 +92,7 @@ internal partial class Tester
                 ConsoleKeyInfo keyInfo;
                 do
                 {
-                    keyInfo = Console.ReadKey(intercept: true);
+                    keyInfo = AppConsole.ReadKey(intercept: true);
                 } while (keyInfo.Key != ConsoleKey.N && keyInfo.Key != ConsoleKey.Q);
                 Console.WriteLine();
                 quit = keyInfo.Key == ConsoleKey.Q;

@@ -1,4 +1,4 @@
-﻿using BitFab.KW1281Test.Blocks;
+using BitFab.KW1281Test.Blocks;
 using BitFab.KW1281Test.Logging;
 using System;
 using System.Collections.Generic;
@@ -769,9 +769,9 @@ internal class KW1281Dialog : IKW1281Dialog
         Log.WriteLine("[Up arrow | Down arrow | Q to quit]", LogDest.Console);
         while (true)
         {
-            if (Console.KeyAvailable)
+            if (AppConsole.KeyAvailable)
             {
-                var keyInfo = Console.ReadKey(intercept: true);
+                var keyInfo = AppConsole.ReadKey(intercept: true);
                 if (keyInfo.Key == ConsoleKey.UpArrow)
                 {
                     if (groupNumber < 255)
@@ -850,7 +850,7 @@ internal class KW1281Dialog : IKW1281Dialog
         }
 
         Log.WriteLine("[Press a key to quit]", LogDest.Console);
-        while (!Console.KeyAvailable)
+        while (!AppConsole.KeyAvailable)
         {
             var bytes = new List<byte>
             {
@@ -902,12 +902,12 @@ internal class KW1281Dialog : IKW1281Dialog
     /// </summary>
     private static void Overlay(string message)
     {
-        (int left, int top) = Console.GetCursorPosition();
-        Console.SetCursorPosition(0, top);
+        (int left, int top) = AppConsole.GetCursorPosition();
+        AppConsole.SetCursorPosition(0, top);
         if (left > 0)
         {
             Log.Write(new string(' ', left), LogDest.Console);
-            Console.SetCursorPosition(0, top);
+            AppConsole.SetCursorPosition(0, top);
         }
         Log.Write(message, LogDest.Console);
         Log.WriteLine(message, LogDest.File);

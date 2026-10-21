@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO.Ports;
+using System.Threading;
 using Android.Hardware.Usb;
 using BitFab.KW1281Test.Interface;
 
@@ -42,6 +43,16 @@ internal sealed class AndroidFtdiInterface : IInterface
     private bool _break;
     private volatile bool _closed;
 
+    // Setari alese in aplicatie
+    public static int LatencyMs { get; set; } = 1;
+    public static bool ForceRts { get; set; }
+    public static bool DtrEnabled { get; set; } = true;
+
+    // Contoare pentru becurile RX/TX si rata de transfer
+    private static long _txBytes, _rxBytes;
+    public static long TxBytes => Interlocked.Read(ref _txBytes);
+    public static long RxBytes => Interlocked.Read(ref _rxBytes);
+
     public AndroidFtdiInterface(UsbDeviceConnection connection, UsbDevice device, int baudRate)
     {
         _conn = connection;
@@ -73,7 +84,7 @@ internal sealed class AndroidFtdiInterface : IInterface
         _portIndex = 1;
 
         Control(SioReset, 0, _portIndex);               // reset
-        Control(SioSetLatencyTimer, 1, _portIndex);     // 1 ms: raspuns rapid pe K-line
+        Control(SioSetLatencyTimer, Math.Clamp(LatencyMs, 1, 255), _portIndex);
         Control(SioSetFlowCtrl, 0, _portIndex);         // fara flow control
         SetBaudRate(baudRate);
         ApplyLineSettings();
@@ -133,6 +144,7 @@ internal sealed class AndroidFtdiInterface : IInterface
             var written = _conn.BulkTransfer(_epOut, _txChunk, len, WriteTimeout);
             if (written < 0) throw new TimeoutException("Timeout la scrierea pe K-line.");
             offset += written;
+            Interlocked.Add(ref _txBytes, written);
         }
     }
 
@@ -161,9 +173,9 @@ internal sealed class AndroidFtdiInterface : IInterface
         ApplyLineSettings();
     }
 
-    public void SetDtr(bool on) => Control(SioModemCtrl, 0x0100 | (on ? 0x01 : 0), _portIndex);
+    public void SetDtr(bool on) => Control(SioModemCtrl, 0x0100 | (on && DtrEnabled ? 0x01 : 0), _portIndex);
 
-    public void SetRts(bool on) => Control(SioModemCtrl, 0x0200 | (on ? 0x02 : 0), _portIndex);
+    public void SetRts(bool on) => Control(SioModemCtrl, 0x0200 | (on || ForceRts ? 0x02 : 0), _portIndex);
 
     public void Dispose()
     {
@@ -210,6 +222,7 @@ internal sealed class AndroidFtdiInterface : IInterface
             {
                 var len = Math.Min(_packetSize, n - off);
                 for (var i = 2; i < len; i++) _rx.Enqueue(_rxRaw[off + i]);
+                if (len > 2) Interlocked.Add(ref _rxBytes, len - 2);
             }
         }
     }
@@ -246,7 +259,7 @@ internal sealed class AndroidFtdiInterface : IInterface
             var divisor = clk / baud; // = clk*16/clkDiv/baud
             var best = (divisor & 1) != 0 ? divisor / 2 + 1 : divisor / 2;
             if (best > 0x20000) best = 0x1FFFF;
-            encoded = (best >> 3) | ((long)frac[best & 7] << 14);
+            encoded = (long)(best >> 3) | ((long)frac[best & 7] << 14);
         }
         return ((int)(encoded & 0xFFFF), (int)(encoded >> 16));
     }
