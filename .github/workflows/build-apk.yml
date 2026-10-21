@@ -1,0 +1,38 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Instaleaza workload Android
+        run: dotnet workload install android
+
+      - name: Instaleaza dependentele Android SDK
+        run: >
+          dotnet build KW1281Android/KW1281Android.csproj -t:InstallAndroidDependencies
+          -f net10.0-android -p:AndroidSdkDirectory=$ANDROID_HOME -p:AcceptAndroidSDKLicenses=True
+
+      - name: Compileaza APK
+        run: >
+          dotnet publish KW1281Android/KW1281Android.csproj -c Release -f net10.0-android
+          -p:AndroidSdkDirectory=$ANDROID_HOME -o out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KW1281Android-apk
+          path: out/*-Signed.apk
