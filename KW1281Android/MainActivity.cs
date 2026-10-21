@@ -102,6 +102,9 @@ public class MainActivity : Activity
     private Action? _onFinish;
     private int _group = 1;
     private readonly List<string> _faults = new();
+    private Spinner _mapEcu = null!;
+    private EditText _mapFile = null!;
+    private TextView _fileList = null!, _verText2 = null!;
     private StreamWriter? _csv;
     private string? _csvName;
     private GraphView _graph = null!;
@@ -217,36 +220,107 @@ public class MainActivity : Activity
 
     // ================================================================ Construire UI
 
+    // ---- Taburi ----
+    private static readonly (string Icon, string Title)[] Tabs =
+    [
+        ("🏠", "Acasă"), ("🔑", "OBD"), ("🩺", "Diag"), ("📈", "Live"),
+        ("🗺️", "Multi-Map"), ("📁", "Fișiere"), ("⚙️", "Setări"),
+    ];
+    private readonly List<LinearLayout> _tabPages = new();
+    private readonly List<TextView> _tabButtons = new();
+    private LinearLayout _pageHost = null!;
+    private int _activeTab;
+
     private void BuildUi()
     {
         var outer = new LinearLayout(this) { Orientation = Orientation.Vertical };
         outer.SetBackgroundColor(CBg);
         outer.SetFitsSystemWindows(true);
 
+        // Antet fix sus
+        var headerWrap = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        headerWrap.SetPadding(Dp(14), Dp(10), Dp(14), 0);
+        headerWrap.AddView(BuildHeader());
+        outer.AddView(headerWrap);
+
+        // Bara de taburi (scroll orizontal)
+        outer.AddView(BuildTabBar());
+
+        // Zona care deruleaza, cu pagina tabului curent
         var scroll = new ScrollView(this) { FillViewport = true };
-        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetPadding(Dp(14), Dp(10), Dp(14), Dp(24));
-        scroll.AddView(root);
+        _pageHost = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        _pageHost.SetPadding(Dp(14), Dp(10), Dp(14), Dp(16));
+        scroll.AddView(_pageHost);
         outer.AddView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        root.AddView(BuildHeader());
-        root.AddView(BuildInterfaceCard());
-        root.AddView(BuildCommCard());
-        root.AddView(BuildEcuCard());
-        root.AddView(BuildLiveCard());
-        root.AddView(BuildActionsCard());
-        root.AddView(BuildAdvancedCard());
-        root.AddView(BuildConsoleCard());
+        // Construieste paginile tabului
+        var pHome = NewPage(); pHome.AddView(BuildInterfaceCard()); pHome.AddView(BuildCommCard()); pHome.AddView(BuildEcuCard());
+        var pObd = NewPage(); pObd.AddView(BuildObdCard());
+        var pDiag = NewPage(); pDiag.AddView(BuildActionsCard()); pDiag.AddView(BuildAdvancedCard());
+        var pLive = NewPage(); pLive.AddView(BuildLiveCard());
+        var pMap = NewPage(); pMap.AddView(BuildMultiMapCard());
+        var pFiles = NewPage(); pFiles.AddView(BuildFilesCard());
+        var pSet = NewPage(); pSet.AddView(BuildSettingsCard());
+        foreach (var p in new[] { pHome, pObd, pDiag, pLive, pMap, pFiles, pSet })
+        {
+            _tabPages.Add(p);
+            _pageHost.AddView(p);
+        }
 
-        var foot = Txt("STP Programming • bazat pe kw1281test (MIT)", 11, CMuted);
-        foot.Gravity = GravityFlags.Center;
-        foot.SetPadding(0, Dp(14), 0, 0);
-        root.AddView(foot);
+        // Consola fixata jos, sub orice tab
+        var consoleWrap = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        consoleWrap.SetPadding(Dp(14), 0, Dp(14), Dp(10));
+        consoleWrap.AddView(BuildConsoleCard());
+        outer.AddView(consoleWrap);
 
         SetContentView(outer);
+        ShowTab(0);
         SelectBaud("10400");
         SelectLatency(1);
         SelectModule("01");
+    }
+
+    private LinearLayout NewPage()
+    {
+        var p = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        p.LayoutParameters = new LinearLayout.LayoutParams(-1, -2);
+        return p;
+    }
+
+    private View BuildTabBar()
+    {
+        var hs = new HorizontalScrollView(this) { HorizontalScrollBarEnabled = false };
+        hs.SetBackgroundColor(CBg);
+        var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        row.SetPadding(Dp(10), Dp(6), Dp(10), Dp(8));
+        for (var i = 0; i < Tabs.Length; i++)
+        {
+            var idx = i;
+            var t = Tabs[i];
+            var btn = Txt($"{t.Icon}  {t.Title}", 13, CMuted, bold: true);
+            btn.SetPadding(Dp(14), Dp(9), Dp(14), Dp(9));
+            btn.Clickable = true;
+            btn.Click += (_, _) => ShowTab(idx);
+            _tabButtons.Add(btn);
+            var lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.SetMargins(Dp(3), 0, Dp(3), 0);
+            row.AddView(btn, lp);
+        }
+        hs.AddView(row);
+        return hs;
+    }
+
+    private void ShowTab(int index)
+    {
+        _activeTab = index;
+        for (var i = 0; i < _tabPages.Count; i++)
+            _tabPages[i].Visibility = i == index ? ViewStates.Visible : ViewStates.Gone;
+        for (var i = 0; i < _tabButtons.Count; i++)
+        {
+            var on = i == index;
+            _tabButtons[i].Background = on ? Rounded(CAccent, 12) : Rounded(CCard2, 12, CLine);
+            _tabButtons[i].SetTextColor(on ? Color.White : CMuted);
+        }
     }
 
     private View BuildHeader()
@@ -581,6 +655,130 @@ public class MainActivity : Activity
         return _lastWrap;
     }
 
+    // Un rand de 1-2 "dale" mari de actiune (icon + titlu + subtitlu)
+    private void AddTiles(LinearLayout card, (string Icon, string Title, string Sub, Action Run)[] tiles)
+    {
+        for (var i = 0; i < tiles.Length; i += 2)
+        {
+            var row = HRow();
+            for (var j = i; j < Math.Min(i + 2, tiles.Length); j++)
+            {
+                var t = tiles[j];
+                var tile = new LinearLayout(this) { Orientation = Orientation.Vertical, Clickable = true };
+                tile.Background = Rounded(CCard2, 16, CLine);
+                tile.SetPadding(Dp(14), Dp(14), Dp(14), Dp(14));
+                tile.AddView(Txt(t.Icon, 22, CText));
+                tile.AddView(Txt(t.Title, 15, CText, bold: true));
+                tile.AddView(Txt(t.Sub, 11, CMuted));
+                tile.Click += (_, _) => t.Run();
+                _actionTiles.Add(tile);
+                var lp = new LinearLayout.LayoutParams(0, -2, 1f);
+                lp.SetMargins(Dp(4), Dp(4), Dp(4), Dp(4));
+                row.AddView(tile, lp);
+            }
+            card.AddView(row);
+        }
+    }
+
+    private View BuildObdCard()
+    {
+        var card = Card("EEPROM • CITIRE / SCRIERE", "🔑");
+        AddTiles(card, new (string, string, string, Action)[]
+        {
+            ("💾", "Backup EEPROM", "citire completă → fișier", () => Execute("DumpEeprom", $"eeprom_{_address}_{DateTime.Now:yyyyMMdd_HHmmss}.bin")),
+            ("🗺️", "Hartă EEPROM", "zone citibile", () => Execute("MapEeprom")),
+            ("📖", "Citește octet", "ReadEeprom ADDRESS", () => AskArgs("Citire EEPROM", "Adresă (hex), ex: 0A", a => Execute("ReadEeprom", a))),
+            ("✍️", "Scrie octet", "WriteEeprom ADDR VAL", () => AskArgs("Scriere EEPROM", "ADRESĂ VALOARE (hex)", a => Confirm($"Scrii în EEPROM-ul modulului {_address}?\nAi backup?", () => Execute("WriteEeprom", a)))),
+            ("🔑", "PIN / SKC", "GetSKC (bord 17)", () => Execute("GetSKC")),
+            ("♻️", "Restaurează EEPROM", "LoadEeprom START FILE", () => AskArgs("Restaurare EEPROM", "START FIȘIER", a => Confirm($"Restaurezi EEPROM-ul modulului {_address} din fișier?\nOperație riscantă!", () => Execute("LoadEeprom", a)))),
+        });
+        var note = Txt("Fă întâi Backup. Fișierele intră în lista de la fila Fișiere (Importă/Exportă).", 11, CMuted);
+        note.SetPadding(0, Dp(8), 0, 0);
+        card.AddView(note);
+        return _lastWrap;
+    }
+
+    private View BuildMultiMapCard()
+    {
+        var card = Card("MULTI-MAP • HĂRȚI FLASH", "🗺️");
+
+        card.AddView(Label("Tip ECU"));
+        var ecuSpin = new Spinner(this);
+        ecuSpin.Adapter = DarkAdapter(new[] { "EDC15 (Low)", "EDC15 (Medium)", "EDC15 (High)", "EDC16 (Low)", "EDC16 (Medium)", "EDC16 (High)" });
+        ecuSpin.Background = Rounded(CCard2, 12, CLine);
+        ecuSpin.SetPadding(Dp(8), Dp(6), Dp(8), Dp(6));
+        card.AddView(ecuSpin, MatchWrap(top: 4));
+        _mapEcu = ecuSpin;
+
+        AddTiles(card, new (string, string, string, Action)[]
+        {
+            ("⬇️", "Citește flash", "backup înainte de orice", RunMapDump),
+            ("💾", "Hartă curentă", "din fișierele salvate", ListMaps),
+        });
+
+        card.AddView(Label("Scrie o hartă în ECU"));
+        _mapFile = Field("Fișier hartă (ex: stage1.bin) — Importă din fila Fișiere");
+        card.AddView(_mapFile, MatchWrap(top: 4));
+        var write = BigButton("⚡  SCRIE HARTA ÎN ECU", CRed);
+        write.Click += (_, _) => RunMapWrite();
+        card.AddView(write, MatchWrap(top: 10));
+
+        var warn = Txt("Scrierea flash e ireversibilă dacă se întrerupe. Bateria pe redresor, nu deconecta cablul, " +
+                       "nu bloca telefonul. Comutarea hărților din mers se face în fișierul de flash (WinOLS), nu din aplicație.",
+            11, CAccent2);
+        warn.SetPadding(0, Dp(10), 0, 0);
+        card.AddView(warn);
+        return _lastWrap;
+    }
+
+    private View BuildFilesCard()
+    {
+        var card = Card("FIȘIERE", "📁");
+        var row = HRow();
+        var imp = BigButton("📥  IMPORTĂ");
+        imp.Click += (_, _) => ImportFile();
+        var exp = BigButton("📤  EXPORTĂ");
+        exp.Click += (_, _) => ExportFile();
+        row.AddView(imp, new LinearLayout.LayoutParams(0, -2, 1f) { RightMargin = Dp(6) });
+        row.AddView(exp, new LinearLayout.LayoutParams(0, -2, 1f) { LeftMargin = Dp(6) });
+        card.AddView(row);
+
+        AddTiles(card, new (string, string, string, Action)[]
+        {
+            ("💽", "Dump EDC15 EEPROM", "", () => Execute("DumpEdc15Eeprom", $"edc15_eeprom_{DateTime.Now:yyyyMMdd_HHmmss}.bin")),
+            ("💽", "Dump EDC16 flash", "Low/Med/High", () => Execute("DumpEdc16Flash")),
+            ("🧰", "ME7 info / EEPROM", "DumpMem", () => AskArgs("ME7 Dump", "START LENGTH [FILE]", a => Execute("DumpMem", a))),
+            ("📄", "Listă fișiere", "ce e salvat pe telefon", ListFiles),
+        });
+
+        _fileList = Txt("", 12, CMuted, mono: true);
+        _fileList.SetPadding(0, Dp(8), 0, 0);
+        card.AddView(_fileList);
+        ListFiles();
+        return _lastWrap;
+    }
+
+    private View BuildSettingsCard()
+    {
+        var card = Card("SETĂRI", "⚙️");
+
+        _verText2 = Txt($"Versiune: v{Updater.CurrentName(this)}  (build {Updater.CurrentVersion(this)})", 13, CAccent2, bold: true, mono: true);
+        card.AddView(_verText2);
+        var upd = BigButton("🔄  CAUTĂ ACTUALIZĂRI");
+        upd.Click += (_, _) => CheckForUpdate(manual: true);
+        card.AddView(upd, MatchWrap(top: 10));
+
+        var hexWrap = MakeSwitch("Monitor HEX (octeți TX / RX bruți)", false);
+        hexWrap.CheckedChange += (_, e) => { AndroidFtdiInterface.Sniff = e.IsChecked; while (AndroidFtdiInterface.Traffic.TryDequeue(out _)) { } };
+        card.AddView(hexWrap, MatchWrap(top: 12));
+
+        var about = Txt("STP Programming • Street Tuning Parts\nMotor: kw1281test v1.0.4 (MIT, Greg Menounos)\n" +
+                        "Diagnoză K-Line VAG: KW1281 și KWP2000.", 12, CMuted);
+        about.SetPadding(0, Dp(14), 0, 0);
+        card.AddView(about);
+        return _lastWrap;
+    }
+
     private View BuildConsoleCard()
     {
         var card = Card("CONSOLĂ", "🖥️");
@@ -597,11 +795,7 @@ public class MainActivity : Activity
             _log.Parent?.RequestDisallowInterceptTouchEvent(true);
             e.Handled = false;
         };
-        card.AddView(_log, new LinearLayout.LayoutParams(-1, Dp(320)));
-
-        _hex = MakeSwitch("Monitor HEX (octeți TX / RX bruți)", false);
-        _hex.CheckedChange += (sender, e) => { AndroidFtdiInterface.Sniff = e.IsChecked; while (AndroidFtdiInterface.Traffic.TryDequeue(out var ignored)) { } };
-        card.AddView(_hex, MatchWrap(top: 8));
+        card.AddView(_log, new LinearLayout.LayoutParams(-1, Dp(150)));
 
         var keys = HRow();
         foreach (var (label, key, ch) in new[] {
@@ -1143,6 +1337,84 @@ public class MainActivity : Activity
             _updating = false;
             _verText.Text = $"v{Updater.CurrentName(this)}  (build {Updater.CurrentVersion(this)})";
             Emit($"Actualizare eșuată: {ex.Message}", CRed);
+        }
+    }
+
+    // ---- Helperi pentru taburile noi ----
+
+    private void AskArgs(string title, string hint, Action<string[]> run)
+    {
+        var input = Field(hint);
+        var pad = Dp(16);
+        var box = new FrameLayout(this);
+        box.SetPadding(pad, pad / 2, pad, 0);
+        box.AddView(input);
+        new AlertDialog.Builder(this)
+            .SetTitle(title)
+            .SetView(box)
+            .SetPositiveButton("OK", (_, _) =>
+                run((input.Text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries)))
+            .SetNegativeButton("Renunță", (_, _) => { })
+            .Show();
+    }
+
+    private (string Cmd, string Level) MapTarget()
+    {
+        var sel = _mapEcu.SelectedItem?.ToString() ?? "EDC15 (Low)";
+        var level = sel.Contains("High") ? "High" : sel.Contains("Medium") ? "Medium" : "Low";
+        var cmd = sel.StartsWith("EDC16") ? "DumpEdc16Flash" : "DumpEdc15Flash";
+        return (cmd, level);
+    }
+
+    private void RunMapDump()
+    {
+        var (cmd, level) = MapTarget();
+        var file = $"flash_{level}_{DateTime.Now:yyyyMMdd_HHmmss}.bin";
+        Execute(cmd, new[] { level, file });
+    }
+
+    private void RunMapWrite()
+    {
+        var file = (_mapFile.Text ?? "").Trim();
+        if (file.Length == 0)
+        {
+            Toast.MakeText(this, "Alege întâi fișierul hărții (Importă din fila Fișiere).", ToastLength.Long)!.Show();
+            return;
+        }
+        var sel = _mapEcu.SelectedItem?.ToString() ?? "EDC15 (Low)";
+        var level = sel.Contains("High") ? "High" : sel.Contains("Medium") ? "Medium" : "Low";
+        var cmd = sel.StartsWith("EDC16") ? "LoadEdc16Flash" : "LoadEdc15Flash";
+        Confirm($"{cmd} SCRIE harta „{file}” în ECU.\n\nAi făcut backup (Citește flash)? " +
+                "Bateria pe redresor, nu deconecta cablul, nu bloca telefonul până la final.",
+            () => Execute(cmd, new[] { level, file }));
+    }
+
+    private void ListMaps() => ListFiles("flash_");
+
+    private void ListFiles() => ListFiles(null);
+
+    private void ListFiles(string? prefix)
+    {
+        try
+        {
+            var files = Directory.GetFiles(_workDir)
+                .Select(f => System.IO.Path.GetFileName(f)).OfType<string>()
+                .Where(f => prefix == null || f.StartsWith(prefix))
+                .OrderByDescending(f => File.GetLastWriteTime(System.IO.Path.Combine(_workDir, f)))
+                .Take(30).ToArray();
+            if (_fileList == null) return;
+            _fileList.Text = files.Length == 0
+                ? "Niciun fișier încă."
+                : string.Join("\n", files.Select(f =>
+                {
+                    var len = new FileInfo(System.IO.Path.Combine(_workDir, f)).Length;
+                    var size = len >= 1024 ? $"{len / 1024.0:0.0} KB" : $"{len} B";
+                    return $"• {f}  ({size})";
+                }));
+        }
+        catch
+        {
+            // ignoram
         }
     }
 
