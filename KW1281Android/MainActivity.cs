@@ -769,7 +769,7 @@ public class MainActivity : Activity
         card.AddView(upd, MatchWrap(top: 10));
 
         var hexWrap = MakeSwitch("Monitor HEX (octeți TX / RX bruți)", false);
-        hexWrap.CheckedChange += (_, e) => { AndroidFtdiInterface.Sniff = e.IsChecked; while (AndroidFtdiInterface.Traffic.TryDequeue(out _)) { } };
+        hexWrap.CheckedChange += (_, e) => { AndroidFtdiInterface.Sniff = e.IsChecked; while (AndroidFtdiInterface.Traffic.TryDequeue(out var __)) { } };
         card.AddView(hexWrap, MatchWrap(top: 12));
 
         var about = Txt("STP Programming • Street Tuning Parts\nMotor: kw1281test v1.0.4 (MIT, Greg Menounos)\n" +
