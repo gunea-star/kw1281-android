@@ -219,109 +219,244 @@ public class MainActivity : Activity
     }
 
     // ================================================================ Construire UI
+    //
+    // Trei ecrane: START (siglă + interfață + Conectează) -> MENIU (funcții) ->
+    // FUNCȚIE (ecran plin pe o singură funcție, cu baud/modul reglabile + consolă jos).
 
-    // ---- Taburi ----
-    private static readonly (string Icon, string Title)[] Tabs =
-    [
-        ("🏠", "Acasă"), ("🔑", "OBD"), ("🩺", "Diag"), ("📈", "Live"),
-        ("🗺️", "Multi-Map"), ("📁", "Fișiere"), ("⚙️", "Setări"),
-    ];
-    private readonly List<LinearLayout> _tabPages = new();
-    private readonly List<TextView> _tabButtons = new();
-    private LinearLayout _pageHost = null!;
-    private int _activeTab;
+    private FrameLayout _root = null!;
+    private View _screenStart = null!, _screenMenu = null!;
+    private FrameLayout _funcHost = null!;
+    private TextView _funcTitle = null!;
+    private enum Screen { Start, Menu, Func }
+    private Screen _screen = Screen.Start;
+
+    // Meniul principal: fiecare intrare construiește conținutul ecranului ei de funcție.
+    private (string Icon, string Title, string Sub, Func<View> Build)[] _menu = Array.Empty<(string, string, string, Func<View>)>();
 
     private void BuildUi()
     {
-        var outer = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        outer.SetBackgroundColor(CBg);
-        outer.SetFitsSystemWindows(true);
-
-        // Antet fix sus
-        var headerWrap = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        headerWrap.SetPadding(Dp(14), Dp(10), Dp(14), 0);
-        headerWrap.AddView(BuildHeader());
-        outer.AddView(headerWrap);
-
-        // Bara de taburi (scroll orizontal)
-        outer.AddView(BuildTabBar());
-
-        // Zona care deruleaza, cu pagina tabului curent
-        var scroll = new ScrollView(this) { FillViewport = true };
-        _pageHost = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        _pageHost.SetPadding(Dp(14), Dp(10), Dp(14), Dp(16));
-        scroll.AddView(_pageHost);
-        outer.AddView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
-
-        // Construieste paginile tabului
-        var pHome = NewPage(); pHome.AddView(BuildInterfaceCard()); pHome.AddView(BuildCommCard()); pHome.AddView(BuildEcuCard());
-        var pObd = NewPage(); pObd.AddView(BuildObdCard());
-        var pDiag = NewPage(); pDiag.AddView(BuildActionsCard()); pDiag.AddView(BuildAdvancedCard());
-        var pLive = NewPage(); pLive.AddView(BuildLiveCard());
-        var pMap = NewPage(); pMap.AddView(BuildMultiMapCard());
-        var pFiles = NewPage(); pFiles.AddView(BuildFilesCard());
-        var pSet = NewPage(); pSet.AddView(BuildSettingsCard());
-        foreach (var p in new[] { pHome, pObd, pDiag, pLive, pMap, pFiles, pSet })
+        _menu = new (string, string, string, Func<View>)[]
         {
-            _tabPages.Add(p);
-            _pageHost.AddView(p);
-        }
+            ("🩺", "Diagnoză", "identificare, erori, adaptări", BuildDiagScreen),
+            ("🔑", "EEPROM / OBD", "citire, scriere, PIN/SKC", BuildObdCard),
+            ("📈", "Live Data", "valori + grafic + CSV", BuildLiveCard),
+            ("🗺️", "Multi-Map", "citire / scriere flash", BuildMultiMapCard),
+            ("🛠️", "Mod avansat", "toate comenzile kw1281test", BuildAdvancedCard),
+            ("📁", "Fișiere", "dump-uri, import / export", BuildFilesCard),
+            ("⚙️", "Setări", "baud, actualizări, HEX", BuildSettingsCard),
+        };
 
-        // Consola fixata jos, sub orice tab
-        var consoleWrap = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        consoleWrap.SetPadding(Dp(14), 0, Dp(14), Dp(10));
-        consoleWrap.AddView(BuildConsoleCard());
-        outer.AddView(consoleWrap);
+        _root = new FrameLayout(this);
+        _root.SetBackgroundColor(CBg);
+        _root.SetFitsSystemWindows(true);
 
-        SetContentView(outer);
-        ShowTab(0);
+        _screenStart = BuildStartScreen();
+        _screenMenu = BuildMenuScreen();
+        _funcHost = BuildFuncShell();
+
+        _root.AddView(_screenStart);
+        _root.AddView(_screenMenu);
+        _root.AddView(_funcHost);
+
+        SetContentView(_root);
+        GoStart();
         SelectBaud("10400");
         SelectLatency(1);
         SelectModule("01");
     }
 
-    private LinearLayout NewPage()
+    // ---- Navigare ----
+
+    private void GoStart() { _screen = Screen.Start; Sync(); }
+    private void GoMenu() { _screen = Screen.Menu; Sync(); }
+
+    private void OpenFunc(string title, View content)
     {
-        var p = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        p.LayoutParameters = new LinearLayout.LayoutParams(-1, -2);
-        return p;
+        _funcTitle.Text = title;
+        _funcContent.RemoveAllViews();
+        _funcContent.AddView(content);
+        _screen = Screen.Func;
+        Sync();
     }
 
-    private View BuildTabBar()
+    private void Sync()
     {
-        var hs = new HorizontalScrollView(this) { HorizontalScrollBarEnabled = false };
-        hs.SetBackgroundColor(CBg);
-        var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        row.SetPadding(Dp(10), Dp(6), Dp(10), Dp(8));
-        for (var i = 0; i < Tabs.Length; i++)
-        {
-            var idx = i;
-            var t = Tabs[i];
-            var btn = Txt($"{t.Icon}  {t.Title}", 13, CMuted, bold: true);
-            btn.SetPadding(Dp(14), Dp(9), Dp(14), Dp(9));
-            btn.Clickable = true;
-            btn.Click += (_, _) => ShowTab(idx);
-            _tabButtons.Add(btn);
-            var lp = new LinearLayout.LayoutParams(-2, -2);
-            lp.SetMargins(Dp(3), 0, Dp(3), 0);
-            row.AddView(btn, lp);
-        }
-        hs.AddView(row);
-        return hs;
+        _screenStart.Visibility = _screen == Screen.Start ? ViewStates.Visible : ViewStates.Gone;
+        _screenMenu.Visibility = _screen == Screen.Menu ? ViewStates.Visible : ViewStates.Gone;
+        _funcHost.Visibility = _screen == Screen.Func ? ViewStates.Visible : ViewStates.Gone;
     }
 
-    private void ShowTab(int index)
+    public override void OnBackPressed()
     {
-        _activeTab = index;
-        for (var i = 0; i < _tabPages.Count; i++)
-            _tabPages[i].Visibility = i == index ? ViewStates.Visible : ViewStates.Gone;
-        for (var i = 0; i < _tabButtons.Count; i++)
+        switch (_screen)
         {
-            var on = i == index;
-            _tabButtons[i].Background = on ? Rounded(CAccent, 12) : Rounded(CCard2, 12, CLine);
-            _tabButtons[i].SetTextColor(on ? Color.White : CMuted);
+            case Screen.Func: GoMenu(); break;
+            case Screen.Menu: GoStart(); break;
+            default: base.OnBackPressed(); break;
         }
     }
+
+    // ---- Ecran START: siglă + nume + interfață + Conectează ----
+
+    private View BuildStartScreen()
+    {
+        var scroll = new ScrollView(this) { FillViewport = true };
+        var col = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        col.SetPadding(Dp(16), Dp(16), Dp(16), Dp(24));
+        col.SetGravity(GravityFlags.CenterHorizontal);
+
+        col.AddView(BuildHeader());
+
+        var spacer = new View(this);
+        col.AddView(spacer, new LinearLayout.LayoutParams(-1, Dp(10)));
+
+        col.AddView(BuildInterfaceCard());
+        col.AddView(BuildCommCard());
+        col.AddView(BuildEcuCard());
+
+        var enter = BigButton("☰  MENIU FUNCȚII", CCard2);
+        enter.Click += (_, _) => GoMenu();
+        col.AddView(enter, MatchWrap(top: 10));
+
+        var foot = Txt("STP Programming • bazat pe kw1281test (MIT)", 11, CMuted);
+        foot.Gravity = GravityFlags.Center;
+        foot.SetPadding(0, Dp(18), 0, 0);
+        col.AddView(foot);
+
+        scroll.AddView(col);
+        return scroll;
+    }
+
+    // ---- Ecran MENIU ----
+
+    private View BuildMenuScreen()
+    {
+        var outer = new LinearLayout(this) { Orientation = Orientation.Vertical };
+
+        outer.AddView(BuildTopBar("Meniu principal", GoStart));
+
+        var scroll = new ScrollView(this) { FillViewport = true };
+        var grid = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        grid.SetPadding(Dp(14), Dp(12), Dp(14), Dp(20));
+
+        for (var i = 0; i < _menu.Length; i += 2)
+        {
+            var row = HRow();
+            for (var j = i; j < Math.Min(i + 2, _menu.Length); j++)
+            {
+                var m = _menu[j];
+                var tile = new LinearLayout(this) { Orientation = Orientation.Vertical, Clickable = true };
+                tile.Background = Rounded(CCard, 18, CLine);
+                tile.SetPadding(Dp(16), Dp(18), Dp(16), Dp(18));
+                tile.AddView(Txt(m.Icon, 28, CText));
+                var tt = Txt(m.Title, 16, CText, bold: true);
+                tt.SetPadding(0, Dp(6), 0, 0);
+                tile.AddView(tt);
+                tile.AddView(Txt(m.Sub, 11, CMuted));
+                tile.Click += (_, _) => OpenFunc(m.Title, m.Build());
+                var lp = new LinearLayout.LayoutParams(0, -2, 1f);
+                lp.SetMargins(Dp(5), Dp(5), Dp(5), Dp(5));
+                row.AddView(tile, lp);
+            }
+            grid.AddView(row);
+        }
+        scroll.AddView(grid);
+        outer.AddView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+        return outer;
+    }
+
+    // ---- Shell FUNCȚIE: bară sus (← + titlu), bară baud/modul, conținut, consolă jos ----
+
+    private LinearLayout _funcContent = null!;
+
+    private FrameLayout BuildFuncShell()
+    {
+        var host = new FrameLayout(this);
+        var outer = new LinearLayout(this) { Orientation = Orientation.Vertical };
+
+        var bar = BuildTopBarRef(out _funcTitle, GoMenu);
+        outer.AddView(bar);
+
+        // Bară compactă baud + modul, reglabilă în orice funcție
+        outer.AddView(BuildQuickBar());
+
+        var scroll = new ScrollView(this) { FillViewport = true };
+        _funcContent = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        _funcContent.SetPadding(Dp(14), Dp(10), Dp(14), Dp(12));
+        scroll.AddView(_funcContent);
+        outer.AddView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        // Consola jos, în fiecare ecran de funcție
+        var consoleWrap = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        consoleWrap.SetPadding(Dp(14), 0, Dp(14), Dp(10));
+        consoleWrap.AddView(BuildConsoleCard());
+        outer.AddView(consoleWrap);
+
+        host.AddView(outer);
+        return host;
+    }
+
+    private View BuildTopBar(string title, Action back)
+    {
+        return BuildTopBarRef(out var _, back, title);
+    }
+
+    private View BuildTopBarRef(out TextView titleView, Action back, string title = "")
+    {
+        var bar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        bar.SetGravity(GravityFlags.CenterVertical);
+        bar.SetBackgroundColor(CCard);
+        bar.SetPadding(Dp(10), Dp(10), Dp(14), Dp(10));
+
+        var backBtn = Txt("←", 22, CText, bold: true);
+        backBtn.SetPadding(Dp(12), Dp(4), Dp(14), Dp(4));
+        backBtn.Clickable = true;
+        backBtn.Background = Rounded(CCard2, 12, CLine);
+        backBtn.Click += (_, _) => back();
+        bar.AddView(backBtn);
+
+        titleView = Txt("  " + title, 17, CText, bold: true);
+        bar.AddView(titleView, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        // mic indicator cablu + becuri în bară
+        _barCable = Dot(CRed, 10);
+        bar.AddView(_barCable);
+        bar.AddView(Txt("  ", 10, CMuted));
+        return bar;
+    }
+
+    private View _barCable = null!;
+
+    // Bară rapidă: baud + modul, setabile în orice funcție
+    private EditText _quickBaud = null!, _quickAddr = null!;
+
+    private View BuildQuickBar()
+    {
+        var bar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        bar.SetGravity(GravityFlags.CenterVertical);
+        bar.SetBackgroundColor(CBg);
+        bar.SetPadding(Dp(14), Dp(8), Dp(14), Dp(8));
+
+        bar.AddView(Txt("Baud ", 12, CMuted, bold: true));
+        _quickBaud = Field("10400", numeric: true);
+        _quickBaud.Text = _baud;
+        _quickBaud.TextChanged += (_, _) => { var t = _quickBaud.Text?.Trim() ?? ""; if (t.Length > 0) _baud = t; };
+        bar.AddView(_quickBaud, new LinearLayout.LayoutParams(0, -2, 1.2f));
+
+        bar.AddView(Txt("  Modul ", 12, CMuted, bold: true));
+        _quickAddr = Field("17");
+        _quickAddr.Text = _address;
+        _quickAddr.TextChanged += (_, _) => { var t = _quickAddr.Text?.Trim() ?? ""; if (t.Length > 0) _address = t; };
+        bar.AddView(_quickAddr, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        var con = SmallButton("⚡");
+        con.Click += (_, _) => Connect();
+        bar.AddView(con);
+        return bar;
+    }
+
+    // ---- Ecran Diagnoză (grupează acțiunile rapide de diag) ----
+    private View BuildDiagScreen() => BuildActionsCard();
 
     private View BuildHeader()
     {
@@ -1173,19 +1308,30 @@ public class MainActivity : Activity
     {
         _sawEcu = false;
         _sawError = false;
-        _ecuDot.Background = Oval(CAccent2);
-        _ecuTitle.Text = $"  Se conectează la {_address}…";
-        _ecuTitle.SetTextColor(CAccent2);
-        _ecuInfo.Text = "Trezire modul (5 baud) • citire identificare…";
+        if (_ecuDot != null)
+        {
+            _ecuDot.Background = Oval(CAccent2);
+            _ecuTitle.Text = $"  Se conectează la {_address}…";
+            _ecuTitle.SetTextColor(CAccent2);
+            _ecuInfo.Text = "Trezire modul (5 baud) • citire identificare…";
+        }
         Execute("ReadIdent", Array.Empty<string>(), onFinish: () =>
         {
             _connected = _sawEcu || !_sawError;
             if (_sawError && !_sawEcu) _connected = false;
-            _ecuDot.Background = Oval(_connected ? CGreen : CRed);
-            _ecuTitle.Text = _connected ? $"  Conectat ✓  modul {_address}" : $"  Fără răspuns ✗  modul {_address}";
-            _ecuTitle.SetTextColor(_connected ? CGreen : CRed);
-            if (!_connected)
-                _ecuInfo.Text = "Verifică: contact pus, adresa modulului, baud rate, cablul.";
+            if (_ecuDot != null)
+            {
+                _ecuDot.Background = Oval(_connected ? CGreen : CRed);
+                _ecuTitle.Text = _connected ? $"  Conectat ✓  modul {_address}" : $"  Fără răspuns ✗  modul {_address}";
+                _ecuTitle.SetTextColor(_connected ? CGreen : CRed);
+                if (!_connected)
+                    _ecuInfo.Text = "Verifică: contact pus, adresa modulului, baud rate, cablul.";
+            }
+            if (_connected)
+            {
+                Toast.MakeText(this, "Conectat ✓ — alege o funcție din meniu", ToastLength.Short)!.Show();
+                if (_screen == Screen.Start) GoMenu();
+            }
         });
     }
 
@@ -1503,9 +1649,12 @@ public class MainActivity : Activity
 
     private void SetBusy(bool busy, string cmd)
     {
-        _busy.Text = busy ? $"⏳  Rulează: {cmd}…" : "";
-        _connectBtn.Enabled = !busy;
-        _connectBtn.Alpha = busy ? 0.5f : 1f;
+        if (_busy != null) _busy.Text = busy ? $"⏳  Rulează: {cmd}…" : "";
+        if (_connectBtn != null)
+        {
+            _connectBtn.Enabled = !busy;
+            _connectBtn.Alpha = busy ? 0.5f : 1f;
+        }
         foreach (var t in _actionTiles) t.Alpha = busy ? 0.5f : 1f;
     }
 
@@ -1531,7 +1680,7 @@ public class MainActivity : Activity
             _sawEcu = true;
             col = CAccent2;
             var info = l[4..].Trim();
-            _ui.Post(() => _ecuInfo.Text = info);
+            _ui.Post(() => { if (_ecuInfo != null) _ecuInfo.Text = info; });
         }
         else if (l.StartsWith("SEND", StringComparison.Ordinal) || l.StartsWith("Sent", StringComparison.Ordinal) || l.StartsWith("TX", StringComparison.Ordinal))
             col = CCyan;
@@ -1596,6 +1745,11 @@ public class MainActivity : Activity
             if (rx != _lastRx) { _ledRxUntil = now + 90; _lastRx = rx; }
             _ledTx.Background = Oval(now < _ledTxUntil ? CAccent : CLedOff);
             _ledRx.Background = Oval(now < _ledRxUntil ? CGreen : CLedOff);
+            if (_barCable != null)
+            {
+                var cableReady = _device != null && _usb.HasPermission(_device);
+                _barCable.Background = Oval(cableReady ? CGreen : CRed);
+            }
             if (now - _rateTick >= 1000)
             {
                 var total = tx + rx;
