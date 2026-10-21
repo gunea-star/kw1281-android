@@ -455,7 +455,7 @@ public class MainActivity : Activity
             lock (_sb)
             {
                 _sb.Append(value);
-                if (value == '\n' || _sb.Length > 512 || Environment.TickCount64 - _lastFlush > 100)
+                if (value == '\n' || _sb.Length > 512 || System.Environment.TickCount64 - _lastFlush > 100)
                     FlushLocked();
             }
         }
@@ -480,7 +480,7 @@ public class MainActivity : Activity
             if (_sb.Length == 0) return;
             sink(_sb.ToString());
             _sb.Clear();
-            _lastFlush = Environment.TickCount64;
+            _lastFlush = System.Environment.TickCount64;
         }
     }
 
