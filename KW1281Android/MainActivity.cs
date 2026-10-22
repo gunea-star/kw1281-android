@@ -880,6 +880,54 @@ public class MainActivity : Activity
     // ---- Dashboard mașină de curse ----
     private DashboardView _dash = null!;
     private EditText _dashGroup = null!, _dashRpmMax = null!;
+    private readonly System.Collections.Generic.Dictionary<string, (float Val, string Raw)> _chan = new();
+
+    // Canalele cerute: "grup.poziție", etichetă, unitate afișată, maxim scală. Primul = RPM (centru).
+    private static readonly (string Ch, string Label, string Unit, float Max)[] DashMap =
+    {
+        ("2.1", "RPM",        "rpm", 7000),   // centru
+        ("1.2", "Inj time",   "ms",  6),
+        ("1.4", "Inj angle",  "°",   30),
+        ("2.4", "Air mass",   "mg",  1200),
+        ("3.2", "Battery",    "V",   16),
+        ("3.4", "Intake T",   "°C",  100),
+        ("21.3","Coolant T",  "°C",  130),
+        ("1.3", "Pedal",      "%",   100),
+    };
+    // Grupurile care trebuie citite, în ordine
+    private static readonly int[] DashGroups = { 1, 2, 3, 21 };
+    private int _dashGroupIdx;
+
+    private void RefreshDashboard()
+    {
+        if (_dash == null) return;
+        var rpmMax = float.TryParse(_dashRpmMax?.Text?.Trim(), out var rm) && rm > 0 ? rm : 7000f;
+
+        // centru = RPM
+        var rpm = _chan.TryGetValue(DashMap[0].Ch, out var rv) ? rv.Val : 0;
+        _dash.SetRpm(rpm, rpmMax, rpmMax * 0.85f);
+
+        // 7 gauge-uri
+        for (var i = 1; i < DashMap.Length; i++)
+        {
+            var d = DashMap[i];
+            if (_chan.TryGetValue(d.Ch, out var cv))
+                _dash.SetGauge(i - 1, d.Label, cv.Val, d.Unit, d.Max);
+            else
+                _dash.SetGauge(i - 1, d.Label, 0, d.Unit, d.Max);
+        }
+    }
+
+    // Avansează spre următorul grup din listă trimițând tasta sus/jos către GroupRead.
+    private void StepDashGroup()
+    {
+        _dashGroupIdx = (_dashGroupIdx + 1) % DashGroups.Length;
+        var target = DashGroups[_dashGroupIdx];
+        var diff = target - _group;
+        // apasă ▲/▼ de câte ori e nevoie ca GroupRead să ajungă la grupul țintă
+        if (diff > 0) for (var k = 0; k < diff; k++) AppConsole.PushKey(ConsoleKey.UpArrow);
+        else if (diff < 0) for (var k = 0; k < -diff; k++) AppConsole.PushKey(ConsoleKey.DownArrow);
+    }
 
     private View BuildDashboardScreen()
     {
@@ -889,11 +937,7 @@ public class MainActivity : Activity
         card.AddView(_dash, new LinearLayout.LayoutParams(-1, Dp(360)));
 
         var cfg = HRow();
-        cfg.AddView(Txt("Grup RPM ", 12, CMuted, bold: true));
-        _dashGroup = Field("ex: 1", numeric: true);
-        _dashGroup.Text = _group.ToString();
-        cfg.AddView(_dashGroup, new LinearLayout.LayoutParams(0, -2, 1f));
-        cfg.AddView(Txt("  RPM max ", 12, CMuted, bold: true));
+        cfg.AddView(Txt("RPM max ", 12, CMuted, bold: true));
         _dashRpmMax = Field("7000", numeric: true);
         _dashRpmMax.Text = "7000";
         cfg.AddView(_dashRpmMax, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -903,7 +947,9 @@ public class MainActivity : Activity
         var start = BigButton("▶  PORNEȘTE");
         start.Click += (_, _) =>
         {
-            if (int.TryParse(_dashGroup.Text?.Trim(), out var g)) _group = g;
+            _chan.Clear();
+            _dashGroupIdx = 0;
+            _group = DashGroups[0];
             _dashActive = true;
             StartLive();
         };
@@ -913,8 +959,9 @@ public class MainActivity : Activity
         btns.AddView(stop, new LinearLayout.LayoutParams(0, -2, 1f) { LeftMargin = Dp(6) });
         card.AddView(btns, MatchWrap(top: 10));
 
-        var note = Txt("Primul câmp numeric din grup e luat ca RPM, restul ca gauge-uri. " +
-                       "Ritmul e cel al K-line (câteva citiri pe secundă), nu ca la jocuri.", 11, CMuted);
+        var note = Txt("Citește automat grupurile 1, 2, 3 și 21. Canale: 2-1 RPM, 1-2 timp inj, 1-4 unghi inj, " +
+                       "2-4 masă aer, 3-2 baterie, 3-4 temp aer, 21-3 temp apă, 1-3 pedală. " +
+                       "Pe K-line valorile se reîmprospătează la câteva secunde, nu instant.", 11, CMuted);
         note.SetPadding(0, Dp(10), 0, 0);
         card.AddView(note);
         return _lastWrap;
@@ -1887,19 +1934,14 @@ public class MainActivity : Activity
 
         _graph?.Add(nums);
 
-        // Dashboard racing: primul numar = RPM, restul = gauge-uri
+        // Dashboard racing: reține fiecare poziție din fiecare grup într-un slot "grup.poziție"
         if (_dashActive && _dash != null)
         {
-            var rpmMax = float.TryParse(_dashRpmMax?.Text?.Trim(), out var rm) && rm > 0 ? rm : 7000f;
-            _dash.SetRpm(nums[0] ?? 0, rpmMax, rpmMax * 0.85f);
-            // gauge-urile 1..4 = câmpurile 2..5 din grup (câmpul 1 e RPM, în centru)
-            for (var i = 0; i < 4; i++)
-            {
-                var fieldIdx = i + 1;
-                if (fieldIdx >= parts.Length || nums.Length <= fieldIdx) { _dash.SetGauge(i, "—", 0, "", 100); continue; }
-                var label = UnitOf(parts[fieldIdx], out var u, out var mx);
-                _dash.SetGauge(i, label, nums[fieldIdx] ?? 0, u, mx);
-            }
+            for (var i = 0; i < parts.Length; i++)
+                _chan[$"{_group}.{i + 1}"] = (nums[i] ?? 0, parts[i].Trim());
+            RefreshDashboard();
+            // treci automat la următorul grup de care avem nevoie
+            StepDashGroup();
         }
 
         if (_csv != null)
