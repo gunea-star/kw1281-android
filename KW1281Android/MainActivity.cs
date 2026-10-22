@@ -104,6 +104,8 @@ public class MainActivity : Activity
     private readonly List<string> _faults = new();
     private Spinner _mapEcu = null!;
     private EditText _mapFile = null!;
+    private EditText _eeFile = null!, _eeStart = null!;
+    private bool _dashActive;
     private TextView _fileList = null!, _verText2 = null!;
     private StreamWriter? _csv;
     private string? _csvName;
@@ -237,12 +239,13 @@ public class MainActivity : Activity
     {
         _menu = new (string, string, string, Func<View>)[]
         {
+            ("💾", "EEPROM", "citire și scriere EEPROM", BuildEepromScreen),
+            ("🧠", "FLASH", "citire și scriere flash ECU", BuildFlashScreen),
+            ("🏁", "Dashboard", "turometru + gauge-uri live", BuildDashboardScreen),
             ("🩺", "Diagnoză", "identificare, erori, adaptări", BuildDiagScreen),
-            ("🔑", "EEPROM / OBD", "citire, scriere, PIN/SKC", BuildObdCard),
             ("📈", "Live Data", "valori + grafic + CSV", BuildLiveCard),
-            ("🗺️", "Multi-Map", "citire / scriere flash", BuildMultiMapCard),
-            ("🛠️", "Mod avansat", "toate comenzile kw1281test", BuildAdvancedCard),
             ("📁", "Fișiere", "dump-uri, import / export", BuildFilesCard),
+            ("🛠️", "Mod avansat", "toate comenzile kw1281test", BuildAdvancedCard),
             ("⚙️", "Setări", "baud, actualizări, HEX", BuildSettingsCard),
         };
 
@@ -369,12 +372,14 @@ public class MainActivity : Activity
 
     private LinearLayout _funcContent = null!;
 
+    private LinearLayout _consoleWrap = null!;
+
     private FrameLayout BuildFuncShell()
     {
         var host = new FrameLayout(this);
         var outer = new LinearLayout(this) { Orientation = Orientation.Vertical };
 
-        var bar = BuildTopBarRef(out _funcTitle, GoMenu);
+        var bar = BuildTopBarRef(out _funcTitle, GoMenu, showConsoleBtn: true);
         outer.AddView(bar);
 
         // Bară compactă baud + modul, reglabilă în orice funcție
@@ -386,14 +391,22 @@ public class MainActivity : Activity
         scroll.AddView(_funcContent);
         outer.AddView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        // Consola jos, în fiecare ecran de funcție
-        var consoleWrap = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        consoleWrap.SetPadding(Dp(14), 0, Dp(14), Dp(10));
-        consoleWrap.AddView(BuildConsoleCard());
-        outer.AddView(consoleWrap);
+        // Consola — se deschide / închide din butonul 🖥️ din bara de sus
+        _consoleWrap = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        _consoleWrap.SetPadding(Dp(14), 0, Dp(14), Dp(10));
+        _consoleWrap.AddView(BuildConsoleCard());
+        _consoleWrap.Visibility = ViewStates.Gone;
+        outer.AddView(_consoleWrap);
 
         host.AddView(outer);
         return host;
+    }
+
+    private void ToggleConsole()
+    {
+        if (_consoleWrap == null) return;
+        _consoleWrap.Visibility = _consoleWrap.Visibility == ViewStates.Visible
+            ? ViewStates.Gone : ViewStates.Visible;
     }
 
     private View BuildTopBar(string title, Action back)
@@ -401,7 +414,7 @@ public class MainActivity : Activity
         return BuildTopBarRef(out var _, back, title);
     }
 
-    private View BuildTopBarRef(out TextView titleView, Action back, string title = "")
+    private View BuildTopBarRef(out TextView titleView, Action back, string title = "", bool showConsoleBtn = false)
     {
         var bar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
         bar.SetGravity(GravityFlags.CenterVertical);
@@ -418,10 +431,21 @@ public class MainActivity : Activity
         titleView = Txt("  " + title, 17, CText, bold: true);
         bar.AddView(titleView, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        // mic indicator cablu + becuri în bară
+        // mic indicator cablu
         _barCable = Dot(CRed, 10);
         bar.AddView(_barCable);
         bar.AddView(Txt("  ", 10, CMuted));
+
+        // buton consolă (doar în ecranele de funcție)
+        if (showConsoleBtn)
+        {
+            var conBtn = Txt("🖥️", 18, CText);
+            conBtn.SetPadding(Dp(10), Dp(4), Dp(10), Dp(4));
+            conBtn.Clickable = true;
+            conBtn.Background = Rounded(CCard2, 12, CLine);
+            conBtn.Click += (_, _) => ToggleConsole();
+            bar.AddView(conBtn);
+        }
         return bar;
     }
 
@@ -723,11 +747,9 @@ public class MainActivity : Activity
             ("🔎", "Identificare", "ReadIdent", () => Execute("ReadIdent")),
             ("⚠️", "Coduri eroare", "cu descriere RO", ReadFaults),
             ("🧹", "Șterge erori", "ClearFaultCodes", () => Confirm("Ștergi codurile de eroare din modulul " + _address + "?", () => Execute("ClearFaultCodes"))),
-            ("📈", "Live Data", "GroupRead", StartLive),
-            ("🔑", "PIN / SKC", "GetSKC (bord 17)", () => Execute("GetSKC")),
-            ("💾", "Dump EEPROM", "bord / airbag", () => Execute("DumpEeprom", $"eeprom_{_address}_{DateTime.Now:yyyyMMdd_HHmmss}.bin")),
             ("🛰️", "Auto Scan", "toate modulele", () => Execute("AutoScan")),
             ("🧠", "Versiune soft", "ReadSoftwareVersion", () => Execute("ReadSoftwareVersion")),
+            ("📈", "Live Data", "GroupRead", StartLive),
         ];
         for (var i = 0; i < tiles.Length; i += 2)
         {
@@ -815,27 +837,89 @@ public class MainActivity : Activity
         }
     }
 
-    private View BuildObdCard()
+    // ---- Dashboard mașină de curse ----
+    private DashboardView _dash = null!;
+    private EditText _dashGroup = null!, _dashRpmMax = null!;
+
+    private View BuildDashboardScreen()
     {
-        var card = Card("EEPROM • CITIRE / SCRIERE", "🔑");
-        AddTiles(card, new (string, string, string, Action)[]
+        var card = Card("DASHBOARD", "🏁");
+
+        _dash = new DashboardView(this);
+        card.AddView(_dash, new LinearLayout.LayoutParams(-1, Dp(360)));
+
+        var cfg = HRow();
+        cfg.AddView(Txt("Grup RPM ", 12, CMuted, bold: true));
+        _dashGroup = Field("ex: 1", numeric: true);
+        _dashGroup.Text = _group.ToString();
+        cfg.AddView(_dashGroup, new LinearLayout.LayoutParams(0, -2, 1f));
+        cfg.AddView(Txt("  RPM max ", 12, CMuted, bold: true));
+        _dashRpmMax = Field("7000", numeric: true);
+        _dashRpmMax.Text = "7000";
+        cfg.AddView(_dashRpmMax, new LinearLayout.LayoutParams(0, -2, 1f));
+        card.AddView(cfg, MatchWrap(top: 10));
+
+        var btns = HRow();
+        var start = BigButton("▶  PORNEȘTE");
+        start.Click += (_, _) =>
         {
-            ("💾", "Backup EEPROM", "citire completă → fișier", () => Execute("DumpEeprom", $"eeprom_{_address}_{DateTime.Now:yyyyMMdd_HHmmss}.bin")),
-            ("🗺️", "Hartă EEPROM", "zone citibile", () => Execute("MapEeprom")),
-            ("📖", "Citește octet", "ReadEeprom ADDRESS", () => AskArgs("Citire EEPROM", "Adresă (hex), ex: 0A", a => Execute("ReadEeprom", a))),
-            ("✍️", "Scrie octet", "WriteEeprom ADDR VAL", () => AskArgs("Scriere EEPROM", "ADRESĂ VALOARE (hex)", a => Confirm($"Scrii în EEPROM-ul modulului {_address}?\nAi backup?", () => Execute("WriteEeprom", a)))),
-            ("🔑", "PIN / SKC", "GetSKC (bord 17)", () => Execute("GetSKC")),
-            ("♻️", "Restaurează EEPROM", "LoadEeprom START FILE", () => AskArgs("Restaurare EEPROM", "START FIȘIER", a => Confirm($"Restaurezi EEPROM-ul modulului {_address} din fișier?\nOperație riscantă!", () => Execute("LoadEeprom", a)))),
-        });
-        var note = Txt("Fă întâi Backup. Fișierele intră în lista de la fila Fișiere (Importă/Exportă).", 11, CMuted);
-        note.SetPadding(0, Dp(8), 0, 0);
+            if (int.TryParse(_dashGroup.Text?.Trim(), out var g)) _group = g;
+            _dashActive = true;
+            StartLive();
+        };
+        var stop = BigButton("■  STOP", CRed);
+        stop.Click += (_, _) => { _dashActive = false; StopAll(); };
+        btns.AddView(start, new LinearLayout.LayoutParams(0, -2, 1f) { RightMargin = Dp(6) });
+        btns.AddView(stop, new LinearLayout.LayoutParams(0, -2, 1f) { LeftMargin = Dp(6) });
+        card.AddView(btns, MatchWrap(top: 10));
+
+        var note = Txt("Primul câmp numeric din grup e luat ca RPM, restul ca gauge-uri. " +
+                       "Ritmul e cel al K-line (câteva citiri pe secundă), nu ca la jocuri.", 11, CMuted);
+        note.SetPadding(0, Dp(10), 0, 0);
         card.AddView(note);
         return _lastWrap;
     }
 
-    private View BuildMultiMapCard()
+    // ---- EEPROM: citire si scriere, prioritar ----
+    private View BuildEepromScreen()
     {
-        var card = Card("MULTI-MAP • HĂRȚI FLASH", "🗺️");
+        var card = Card("EEPROM • CITIRE / SCRIERE", "💾");
+
+        card.AddView(Label("Citire"));
+        AddTiles(card, new (string, string, string, Action)[]
+        {
+            ("⬇️", "CITEȘTE EEPROM", "backup complet → fișier", () => Execute("DumpEeprom", $"eeprom_{_address}_{DateTime.Now:yyyyMMdd_HHmmss}.bin")),
+            ("🔑", "PIN / SKC", "GetSKC (bord 17)", () => Execute("GetSKC")),
+        });
+
+        card.AddView(Label("Scriere"));
+        _eeFile = Field("Fișier EEPROM (ex: eeprom_17.bin) — Importă din Fișiere");
+        card.AddView(_eeFile, MatchWrap(top: 4));
+        var start = Field("Adresa de start (de obicei 0)", numeric: true);
+        start.Text = "0";
+        _eeStart = start;
+        card.AddView(start, MatchWrap(top: 6));
+        var write = BigButton("⚡  SCRIE EEPROM ÎN MODUL", CRed);
+        write.Click += (_, _) =>
+        {
+            var f = (_eeFile.Text ?? "").Trim();
+            if (f.Length == 0) { Toast.MakeText(this, "Alege fișierul EEPROM (Importă din Fișiere).", ToastLength.Long)!.Show(); return; }
+            var st = (_eeStart.Text ?? "0").Trim();
+            Confirm($"Scrii EEPROM-ul „{f}” în modulul {_address}?\n\nAi backup? Bateria pe redresor, nu deconecta cablul.",
+                () => Execute("LoadEeprom", new[] { st, f }));
+        };
+        card.AddView(write, MatchWrap(top: 10));
+
+        var note = Txt("Fă întâi CITEȘTE (backup) înainte de orice scriere. Fișierele intră în lista de la Fișiere.", 11, CMuted);
+        note.SetPadding(0, Dp(10), 0, 0);
+        card.AddView(note);
+        return _lastWrap;
+    }
+
+    // ---- FLASH: citire si scriere, prioritar ----
+    private View BuildFlashScreen()
+    {
+        var card = Card("FLASH ECU • CITIRE / SCRIERE", "🧠");
 
         card.AddView(Label("Tip ECU"));
         var ecuSpin = new Spinner(this);
@@ -845,21 +929,22 @@ public class MainActivity : Activity
         card.AddView(ecuSpin, MatchWrap(top: 4));
         _mapEcu = ecuSpin;
 
+        card.AddView(Label("Citire"));
         AddTiles(card, new (string, string, string, Action)[]
         {
-            ("⬇️", "Citește flash", "backup înainte de orice", RunMapDump),
-            ("💾", "Hartă curentă", "din fișierele salvate", ListMaps),
+            ("⬇️", "CITEȘTE FLASH", "backup → fișier", RunMapDump),
+            ("💾", "Fișiere flash", "ce ai salvat", ListMaps),
         });
 
-        card.AddView(Label("Scrie o hartă în ECU"));
-        _mapFile = Field("Fișier hartă (ex: stage1.bin) — Importă din fila Fișiere");
+        card.AddView(Label("Scriere"));
+        _mapFile = Field("Fișier flash (ex: stage1.bin) — Importă din Fișiere");
         card.AddView(_mapFile, MatchWrap(top: 4));
-        var write = BigButton("⚡  SCRIE HARTA ÎN ECU", CRed);
+        var write = BigButton("⚡  SCRIE FLASH ÎN ECU", CRed);
         write.Click += (_, _) => RunMapWrite();
         card.AddView(write, MatchWrap(top: 10));
 
-        var warn = Txt("Scrierea flash e ireversibilă dacă se întrerupe. Bateria pe redresor, nu deconecta cablul, " +
-                       "nu bloca telefonul. Comutarea hărților din mers se face în fișierul de flash (WinOLS), nu din aplicație.",
+        var warn = Txt("Scrierea flash e ireversibilă dacă se întrerupe. Citește întâi (backup). " +
+                       "Bateria pe redresor, nu deconecta cablul, nu bloca telefonul.",
             11, CAccent2);
         warn.SetPadding(0, Dp(10), 0, 0);
         card.AddView(warn);
@@ -1537,12 +1622,15 @@ public class MainActivity : Activity
 
     private void StartLive()
     {
-        _liveCard.Visibility = ViewStates.Visible;
-        for (var i = 0; i < 4; i++) { _liveCells[i].Text = "—"; _liveLabels[i].Text = $"Câmp {i + 1}"; }
-        _liveRaw.Text = "Pornire…";
-        _graph.Clear();
+        if (_liveCard != null)
+        {
+            _liveCard.Visibility = ViewStates.Visible;
+            for (var i = 0; i < 4; i++) { _liveCells[i].Text = "—"; _liveLabels[i].Text = $"Câmp {i + 1}"; }
+            _liveRaw.Text = "Pornire…";
+        }
+        _graph?.Clear();
         var args = new List<string> { _group.ToString() };
-        if (_fastInit.Checked) args.Add("fastinit");
+        if (_fastInit != null && _fastInit.Checked) args.Add("fastinit");
         Execute("GroupRead", args.ToArray());
     }
 
@@ -1742,31 +1830,50 @@ public class MainActivity : Activity
 
     private void ShowOverlay(string text)
     {
-        _liveCard.Visibility = ViewStates.Visible;
-        _liveRaw.Text = text;
+        if (_liveCard != null) { _liveCard.Visibility = ViewStates.Visible; _liveRaw.Text = text; }
         var idx = text.IndexOf(':');
-        if (text.StartsWith("Group ") && idx > 0)
+        if (!text.StartsWith("Group ") || idx <= 0) return;
+
+        if (int.TryParse(text[6..idx].Trim(), out var g)) { _group = g; UpdateGroupLabel(); }
+        var body = text[(idx + 1)..].Trim();
+        var parts = body.Split(" | ");
+        var nums = new float?[4];
+        for (var i = 0; i < Math.Min(4, parts.Length); i++)
         {
-            if (int.TryParse(text[6..idx].Trim(), out var g)) { _group = g; UpdateGroupLabel(); }
-            var body = text[(idx + 1)..].Trim();
-            var parts = body.Split(" | ");
-            var nums = new float?[4];
-            for (var i = 0; i < Math.Min(4, parts.Length); i++)
+            var m = NumRx.Match(parts[i]);
+            if (m.Success && float.TryParse(m.Value.Replace(',', '.'), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var f)) nums[i] = f;
+        }
+
+        _graph?.Add(nums);
+
+        // Dashboard racing: primul numar = RPM, restul = gauge-uri
+        if (_dashActive && _dash != null)
+        {
+            var rpmMax = float.TryParse(_dashRpmMax?.Text?.Trim(), out var rm) && rm > 0 ? rm : 7000f;
+            _dash.SetRpm(nums[0] ?? 0, rpmMax, rpmMax * 0.85f);
+            for (var i = 1; i < 4; i++)
             {
-                var m = NumRx.Match(parts[i]);
-                if (m.Success && float.TryParse(m.Value.Replace(',', '.'), System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture, out var f)) nums[i] = f;
+                if (i >= parts.Length) { _dash.SetGauge(i - 1, "—", 0, "", 100); continue; }
+                var label = UnitOf(parts[i], out var u, out var mx);
+                _dash.SetGauge(i - 1, label, nums[i] ?? 0, u, mx);
             }
-            _graph.Add(nums);
-            if (_csv != null)
+            // al patrulea gauge: RPM ca procent din maxim
+            _dash.SetGauge(3, "RPM %", rpmMax > 0 ? (nums[0] ?? 0) / rpmMax * 100f : 0, "%", 100);
+        }
+
+        if (_csv != null)
+        {
+            try
             {
-                try
-                {
-                    _csv.WriteLine($"{DateTime.Now:HH:mm:ss.fff};{_group};" +
-                        string.Join(';', Enumerable.Range(0, 4).Select(i => i < parts.Length ? parts[i].Trim().Replace(';', ',') : "")));
-                }
-                catch { }
+                _csv.WriteLine($"{DateTime.Now:HH:mm:ss.fff};{_group};" +
+                    string.Join(';', Enumerable.Range(0, 4).Select(i => i < parts.Length ? parts[i].Trim().Replace(';', ',') : "")));
             }
+            catch { }
+        }
+
+        if (_liveCells[0] != null)
+        {
             for (var i = 0; i < 4; i++)
             {
                 if (i < parts.Length)
@@ -1775,12 +1882,29 @@ public class MainActivity : Activity
                     _liveCells[i].Text = p.Length > 0 ? p : "—";
                     _liveLabels[i].Text = $"Câmp {i + 1}";
                 }
-                else
-                {
-                    _liveCells[i].Text = "—";
-                }
+                else _liveCells[i].Text = "—";
             }
         }
+    }
+
+    // Deduce unitatea și o scară de maxim rezonabilă din textul câmpului (ex: "90.5 °C")
+    private static string UnitOf(string field, out string unit, out float max)
+    {
+        var f = field.Trim();
+        unit = "";
+        max = 100;
+        var sp = f.LastIndexOf(' ');
+        if (sp > 0 && sp < f.Length - 1) unit = f[(sp + 1)..].Trim();
+        var u = unit.ToLowerInvariant();
+        if (u.Contains("°c") || u.Contains("c")) max = 150;
+        else if (u.Contains("bar")) max = 25;
+        else if (u.Contains("mbar")) max = 2500;
+        else if (u.Contains("v")) max = 16;
+        else if (u.Contains("%")) max = 100;
+        else if (u.Contains("km/h")) max = 260;
+        else if (u.Contains("mg")) max = 80;
+        else if (u.Contains("/min") || u.Contains("rpm")) max = 7000;
+        return f.Length > 0 ? f : "—";
     }
 
     // ================================================================ Fisiere
