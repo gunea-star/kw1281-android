@@ -775,7 +775,7 @@ public class MainActivity : Activity
 
         var btns = HRow();
         var start = BigButton("▶  PORNEȘTE");
-        start.Click += (_, _) => StartLive();
+        start.Click += (_, _) => { _dashActive = false; StartLive(); };
         var stop = BigButton("■  STOP", CRed);
         stop.Click += (_, _) => StopAll();
         btns.AddView(start, new LinearLayout.LayoutParams(0, -2, 1f) { RightMargin = Dp(6) });
@@ -904,6 +904,7 @@ public class MainActivity : Activity
     // Grupurile care trebuie citite, în ordine
     private static readonly int[] DashGroups = { 1, 2, 3, 21 };
     private int _dashGroupIdx;
+    private int _dashSettle;
 
     private void RefreshDashboard()
     {
@@ -994,8 +995,8 @@ public class MainActivity : Activity
             _chan.Clear();
             _dashGroupIdx = 0;
             _group = DashGroups[0];
-            _dashActive = true;
-            StartLive();
+            StartLive();         // curăță _dashActive
+            _dashActive = true;  // apoi îl activăm doar pentru dashboard
         };
         var stop = BigButton("■  STOP", CRed);
         stop.Click += (_, _) => { _dashActive = false; StopAll(); };
@@ -1757,6 +1758,7 @@ public class MainActivity : Activity
 
     private void StartLive()
     {
+        _dashActive = false; // implicit NU dashboard; ecranul Dashboard îl reactivează după
         if (_liveCard != null)
         {
             _liveCard.Visibility = ViewStates.Visible;
@@ -1859,6 +1861,16 @@ public class MainActivity : Activity
     internal void OnLine(string line)
     {
         var l = line.TrimEnd();
+
+        // Orice linie "Group NNN: ..." alimentează Live Data / Dashboard,
+        // indiferent dacă a venit ca overlay sau ca linie normală.
+        var gl = l.TrimStart();
+        if (gl.StartsWith("Group ", StringComparison.Ordinal) && gl.Contains(':'))
+        {
+            _overlay = gl;
+            return;
+        }
+
         Color col = CText;
         var fm = FaultRx.Match(l);
         if (fm.Success)
@@ -1988,8 +2000,13 @@ public class MainActivity : Activity
             for (var i = 0; i < parts.Length; i++)
                 _chan[$"{_group}.{i + 1}"] = (nums[i] ?? 0, parts[i].Trim());
             RefreshDashboard();
-            // treci automat la următorul grup de care avem nevoie
-            StepDashGroup();
+
+            // treci la următorul grup doar dacă suntem pe grupul țintă curent
+            // și am citit deja o dată (ca să nu sărim prea repede la conectare)
+            if (_group == DashGroups[_dashGroupIdx])
+            {
+                if (++_dashSettle >= 1) { _dashSettle = 0; StepDashGroup(); }
+            }
         }
 
         if (_csv != null)
