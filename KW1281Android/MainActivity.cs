@@ -963,13 +963,20 @@ public class MainActivity : Activity
         if (Window != null) Window.DecorView.SystemUiVisibility = (StatusBarVisibility)SystemUiFlags.Visible;
     }
 
-    // Trimite ▲/▼ ca grupul real (_group) să ajungă la grupul țintă curent.
-    private void DriveToTargetGroup()
+    private int _dashNextGroup = 1;
+
+    // Pornește citirea unui singur grup (țintă). Când se termină, dacă dashboard-ul e
+    // încă activ, pornește automat grupul următor. Fără săgeți, fără scăpări de grup.
+    private void RunDashGroup()
     {
-        var target = DashGroups[_dashGroupIdx];
-        var diff = target - _group;
-        if (diff > 0) for (var k = 0; k < diff; k++) AppConsole.PushKey(ConsoleKey.UpArrow);
-        else if (diff < 0) for (var k = 0; k < -diff; k++) AppConsole.PushKey(ConsoleKey.DownArrow);
+        if (!_dashActive) return;
+        _group = _dashNextGroup;
+        var args = new System.Collections.Generic.List<string> { _group.ToString() };
+        if (_fastInit != null && _fastInit.Checked) args.Add("fastinit");
+        Execute("GroupRead", args.ToArray(), onFinish: () =>
+        {
+            if (_dashActive) _ui.PostDelayed(RunDashGroup, 150);
+        });
     }
 
     private View BuildDashboardScreen()
@@ -992,9 +999,9 @@ public class MainActivity : Activity
         {
             _chan.Clear();
             _dashGroupIdx = 0;
-            _group = DashGroups[0];
-            StartLive();         // curăță _dashActive
-            _dashActive = true;  // apoi îl activăm doar pentru dashboard
+            _dashNextGroup = DashGroups[0];
+            _dashActive = true;
+            RunDashGroup();
         };
         var stop = BigButton("■  STOP", CRed);
         stop.Click += (_, _) => { _dashActive = false; StopAll(); };
@@ -1975,6 +1982,10 @@ public class MainActivity : Activity
 
     private void ShowOverlay(string text)
     {
+        text = text?.Trim() ?? "";
+        // uneori overlay-ul vine cu text de ștergere înainte; ia doar de la "Group"
+        var gpos = text.IndexOf("Group ", StringComparison.Ordinal);
+        if (gpos > 0) text = text[gpos..];
         if (_liveCard != null) { _liveCard.Visibility = ViewStates.Visible; _liveRaw.Text = text; }
         var idx = text.IndexOf(':');
         if (!text.StartsWith("Group ") || idx <= 0) return;
@@ -1992,20 +2003,21 @@ public class MainActivity : Activity
 
         _graph?.Add(nums);
 
-        // Dashboard racing: reține fiecare poziție din fiecare grup într-un slot "grup.poziție"
+        // Dashboard racing: reține fiecare poziție din grupul citit și trece la următorul grup
+        // prin RELANSAREA comenzii GroupRead (fără săgeți care scapă de sub control).
         if (_dashActive && _dash != null)
         {
             for (var i = 0; i < parts.Length; i++)
                 _chan[$"{_group}.{i + 1}"] = (nums[i] ?? 0, parts[i].Trim());
             RefreshDashboard();
 
-            // Ținta curentă e DashGroups[_dashGroupIdx].
-            // Dacă am ajuns pe ea, am citit-o → trecem la următoarea țintă.
-            // Apoi trimitem săgeți ca grupul real să ajungă la noua țintă.
             if (_group == DashGroups[_dashGroupIdx])
+            {
+                // am citit grupul țintă: oprește rularea curentă și treci la următorul grup
                 _dashGroupIdx = (_dashGroupIdx + 1) % DashGroups.Length;
-
-            DriveToTargetGroup();
+                _dashNextGroup = DashGroups[_dashGroupIdx];
+                AppConsole.PushKey(ConsoleKey.Q, 'q'); // iese din GroupRead curent
+            }
         }
 
         if (_csv != null)
