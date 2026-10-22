@@ -963,13 +963,11 @@ public class MainActivity : Activity
         if (Window != null) Window.DecorView.SystemUiVisibility = (StatusBarVisibility)SystemUiFlags.Visible;
     }
 
-    // Avansează spre următorul grup din listă trimițând tasta sus/jos către GroupRead.
-    private void StepDashGroup()
+    // Trimite ▲/▼ ca grupul real (_group) să ajungă la grupul țintă curent.
+    private void DriveToTargetGroup()
     {
-        _dashGroupIdx = (_dashGroupIdx + 1) % DashGroups.Length;
         var target = DashGroups[_dashGroupIdx];
         var diff = target - _group;
-        // apasă ▲/▼ de câte ori e nevoie ca GroupRead să ajungă la grupul țintă
         if (diff > 0) for (var k = 0; k < diff; k++) AppConsole.PushKey(ConsoleKey.UpArrow);
         else if (diff < 0) for (var k = 0; k < -diff; k++) AppConsole.PushKey(ConsoleKey.DownArrow);
     }
@@ -2001,12 +1999,13 @@ public class MainActivity : Activity
                 _chan[$"{_group}.{i + 1}"] = (nums[i] ?? 0, parts[i].Trim());
             RefreshDashboard();
 
-            // treci la următorul grup doar dacă suntem pe grupul țintă curent
-            // și am citit deja o dată (ca să nu sărim prea repede la conectare)
+            // Ținta curentă e DashGroups[_dashGroupIdx].
+            // Dacă am ajuns pe ea, am citit-o → trecem la următoarea țintă.
+            // Apoi trimitem săgeți ca grupul real să ajungă la noua țintă.
             if (_group == DashGroups[_dashGroupIdx])
-            {
-                if (++_dashSettle >= 1) { _dashSettle = 0; StepDashGroup(); }
-            }
+                _dashGroupIdx = (_dashGroupIdx + 1) % DashGroups.Length;
+
+            DriveToTargetGroup();
         }
 
         if (_csv != null)
