@@ -2157,9 +2157,26 @@ public class MainActivity : Activity
         public override void Write(string? value)
         {
             if (string.IsNullOrEmpty(value)) return;
+
+            var trimmed = value.Trim();
+
+            // Rândul de ștergere (doar spații) care precede overlay-ul: îl ignorăm,
+            // DAR nu consumăm semnalul de overlay — îl păstrăm pentru textul real care urmează.
+            if (trimmed.Length == 0 && AppConsole.PeekOverlay())
+                return;
+
+            // Orice text cu "Group " e o valoare de măsurare (Live Data / Dashboard),
+            // indiferent dacă semnalul de overlay a fost sau nu consumat între timp.
+            if (trimmed.Contains("Group ") && trimmed.Contains(':'))
+            {
+                AppConsole.TakeOverlay(); // consumă semnalul dacă există
+                a.OnOverlay(trimmed);
+                return;
+            }
+
             if (AppConsole.TakeOverlay())
             {
-                if (value.Trim().Length > 0) a.OnOverlay(value.Trim());
+                if (trimmed.Length > 0) a.OnOverlay(trimmed);
                 return;
             }
             lock (_line)

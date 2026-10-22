@@ -37,6 +37,9 @@ public static class AppConsole
         return true;
     }
 
+    /// <summary>Verifica fara sa consume semnalul de overlay.</summary>
+    public static bool PeekOverlay() => _overlayNext;
+
     public static void PushKey(ConsoleKey key, char ch = '\0') =>
         _keys.Add(new ConsoleKeyInfo(ch, key, false, false, false));
 
