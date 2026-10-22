@@ -261,6 +261,10 @@ public class MainActivity : Activity
         _root.AddView(_screenMenu);
         _root.AddView(_funcHost);
 
+        // Consola ca strat peste tot, deschisă din butonul plutitor de oriunde
+        _root.AddView(BuildConsoleOverlay());
+        _root.AddView(BuildConsoleFab());
+
         SetContentView(_root);
         GoStart();
         SelectBaud("10400");
@@ -291,6 +295,11 @@ public class MainActivity : Activity
 
     public override void OnBackPressed()
     {
+        if (_consoleOverlay != null && _consoleOverlay.Visibility == ViewStates.Visible)
+        {
+            ToggleConsole();
+            return;
+        }
         switch (_screen)
         {
             case Screen.Func: GoMenu(); break;
@@ -372,14 +381,12 @@ public class MainActivity : Activity
 
     private LinearLayout _funcContent = null!;
 
-    private LinearLayout _consoleWrap = null!;
-
     private FrameLayout BuildFuncShell()
     {
         var host = new FrameLayout(this);
         var outer = new LinearLayout(this) { Orientation = Orientation.Vertical };
 
-        var bar = BuildTopBarRef(out _funcTitle, GoMenu, showConsoleBtn: true);
+        var bar = BuildTopBarRef(out _funcTitle, GoMenu);
         outer.AddView(bar);
 
         // Bară compactă baud + modul, reglabilă în orice funcție
@@ -391,21 +398,54 @@ public class MainActivity : Activity
         scroll.AddView(_funcContent);
         outer.AddView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        // Consola — se deschide / închide din butonul 🖥️ din bara de sus
-        _consoleWrap = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        _consoleWrap.SetPadding(Dp(14), 0, Dp(14), Dp(10));
-        _consoleWrap.AddView(BuildConsoleCard());
-        _consoleWrap.Visibility = ViewStates.Gone;
-        outer.AddView(_consoleWrap);
-
         host.AddView(outer);
         return host;
     }
 
+    // ---- Consolă globală: overlay peste orice ecran + buton plutitor ----
+    private FrameLayout _consoleOverlay = null!;
+
+    private View BuildConsoleOverlay()
+    {
+        _consoleOverlay = new FrameLayout(this);
+        _consoleOverlay.SetBackgroundColor(Color.Argb(210, 0, 0, 0));
+        _consoleOverlay.Visibility = ViewStates.Gone;
+        _consoleOverlay.Clickable = true;
+
+        var panel = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        panel.SetPadding(Dp(14), Dp(14), Dp(14), Dp(14));
+
+        var head = HRow();
+        head.AddView(Txt("🖥️  Consolă", 16, CText, bold: true), new LinearLayout.LayoutParams(0, -2, 1f));
+        var close = SmallButton("✕ Închide");
+        close.Click += (_, _) => ToggleConsole();
+        head.AddView(close);
+        panel.AddView(head, MatchWrap(top: 0));
+
+        panel.AddView(BuildConsoleCard(), MatchWrap(top: 10));
+
+        var lp = new FrameLayout.LayoutParams(-1, -2) { Gravity = GravityFlags.Bottom };
+        _consoleOverlay.AddView(panel, lp);
+        return _consoleOverlay;
+    }
+
+    private View BuildConsoleFab()
+    {
+        var fab = Txt("🖥️", 22, Color.White);
+        fab.Gravity = GravityFlags.Center;
+        fab.Background = Oval(CAccent);
+        fab.Clickable = true;
+        fab.Click += (_, _) => ToggleConsole();
+        var lp = new FrameLayout.LayoutParams(Dp(54), Dp(54)) { Gravity = GravityFlags.Bottom | GravityFlags.End };
+        lp.SetMargins(0, 0, Dp(16), Dp(20));
+        fab.LayoutParameters = lp;
+        return fab;
+    }
+
     private void ToggleConsole()
     {
-        if (_consoleWrap == null) return;
-        _consoleWrap.Visibility = _consoleWrap.Visibility == ViewStates.Visible
+        if (_consoleOverlay == null) return;
+        _consoleOverlay.Visibility = _consoleOverlay.Visibility == ViewStates.Visible
             ? ViewStates.Gone : ViewStates.Visible;
     }
 
@@ -1852,14 +1892,14 @@ public class MainActivity : Activity
         {
             var rpmMax = float.TryParse(_dashRpmMax?.Text?.Trim(), out var rm) && rm > 0 ? rm : 7000f;
             _dash.SetRpm(nums[0] ?? 0, rpmMax, rpmMax * 0.85f);
-            for (var i = 1; i < 4; i++)
+            // gauge-urile 1..4 = câmpurile 2..5 din grup (câmpul 1 e RPM, în centru)
+            for (var i = 0; i < 4; i++)
             {
-                if (i >= parts.Length) { _dash.SetGauge(i - 1, "—", 0, "", 100); continue; }
-                var label = UnitOf(parts[i], out var u, out var mx);
-                _dash.SetGauge(i - 1, label, nums[i] ?? 0, u, mx);
+                var fieldIdx = i + 1;
+                if (fieldIdx >= parts.Length || nums.Length <= fieldIdx) { _dash.SetGauge(i, "—", 0, "", 100); continue; }
+                var label = UnitOf(parts[fieldIdx], out var u, out var mx);
+                _dash.SetGauge(i, label, nums[fieldIdx] ?? 0, u, mx);
             }
-            // al patrulea gauge: RPM ca procent din maxim
-            _dash.SetGauge(3, "RPM %", rpmMax > 0 ? (nums[0] ?? 0) / rpmMax * 100f : 0, "%", 100);
         }
 
         if (_csv != null)

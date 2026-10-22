@@ -138,17 +138,16 @@ internal sealed class DashboardView : View
                        cx + (float)Math.Cos(a) * r1, cy + (float)Math.Sin(a) * r1, _p);
         }
 
-        // RPM mare în centru
+        // RPM mare în centru — valoarea întreagă, ex: 2000
         _txt.Color = CText;
-        _txt.TextSize = radius * 0.5f;
+        _txt.TextSize = radius * 0.42f;
         _txt.FakeBoldText = true;
-        var rpmk = _rpm >= 1000 ? (_rpm / 1000f).ToString("0.0") : _rpm.ToString("0");
-        c.DrawText(rpmk, cx, cy + radius * 0.12f, _txt);
+        c.DrawText(((int)Math.Round(_rpm)).ToString(), cx, cy + radius * 0.10f, _txt);
 
         _txt.Color = CMuted;
         _txt.TextSize = radius * 0.16f;
         _txt.FakeBoldText = false;
-        c.DrawText(_rpm >= 1000 ? "x1000 RPM" : "RPM", cx, cy + radius * 0.42f, _txt);
+        c.DrawText("RPM", cx, cy + radius * 0.40f, _txt);
     }
 
     private void DrawGauge(Canvas c, int i, float cx, float cy, float radius)
