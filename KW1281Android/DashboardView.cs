@@ -33,6 +33,9 @@ internal sealed class DashboardView : View
     private float _rpmMax = 7000f;
     private float _shiftFrom = 5800f;
 
+    /// <summary>Afișează filigranul „STREET TUNING” pe fundal (folosit în full screen).</summary>
+    public bool ShowWatermark { get; set; }
+
     private readonly (string Label, float Value, string Unit, float Max)[] _g =
         new (string, float, string, float)[GaugeCount];
 
@@ -65,6 +68,8 @@ internal sealed class DashboardView : View
         float w = Width, h = Height;
         if (w <= 0 || h <= 0) return;
 
+        if (ShowWatermark) DrawWatermark(canvas, w, h);
+
         DrawShiftLeds(canvas, w, h * 0.07f);
 
         var cx = w / 2f;
@@ -90,6 +95,19 @@ internal sealed class DashboardView : View
         DrawGauge(canvas, 4, w * 0.22f, row3, gr);
         DrawGauge(canvas, 5, w * 0.50f, row3, gr);
         DrawGauge(canvas, 6, w * 0.78f, row3, gr);
+    }
+
+    private void DrawWatermark(Canvas c, float w, float h)
+    {
+        _txt.FakeBoldText = true;
+        // "STREET TUNING" mare, foarte discret, în spate
+        _txt.Color = Color.Argb(26, 255, 106, 0); // portocaliu ~10% opacitate
+        _txt.TextSize = h * 0.16f;
+        c.DrawText("STREET TUNING", w / 2f, h * 0.50f, _txt);
+        _txt.Color = Color.Argb(20, 232, 236, 243);
+        _txt.TextSize = h * 0.11f;
+        c.DrawText("D A S H", w / 2f, h * 0.63f, _txt);
+        _txt.FakeBoldText = false;
     }
 
     private void DrawShiftLeds(Canvas c, float w, float y)

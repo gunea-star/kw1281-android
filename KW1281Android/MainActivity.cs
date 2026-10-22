@@ -95,7 +95,7 @@ public class MainActivity : Activity
     private UsbDevice? _device;
     private string _workDir = "";
     private string? _pendingExport;
-    private string _baud = "10400";
+    private string _baud = "9600";
     private string _address = "01";
     private bool _connected;
     private bool _sawEcu, _sawError;
@@ -267,7 +267,7 @@ public class MainActivity : Activity
 
         SetContentView(_root);
         GoStart();
-        SelectBaud("10400");
+        SelectBaud("9600");
         SelectLatency(1);
         SelectModule("01");
     }
@@ -295,6 +295,11 @@ public class MainActivity : Activity
 
     public override void OnBackPressed()
     {
+        if (_dashFullOverlay != null)
+        {
+            CloseDashFullscreen();
+            return;
+        }
         if (_consoleOverlay != null && _consoleOverlay.Visibility == ViewStates.Visible)
         {
             ToggleConsole();
@@ -639,7 +644,7 @@ public class MainActivity : Activity
         var card = Card("SETĂRI COMUNICARE", "📶");
 
         card.AddView(Label("Baud rate"));
-        var bauds = ChipRow(new[] { "10400", "9600", "4800", "1200", "28800" }, _baudChips, SelectBaud);
+        var bauds = ChipRow(new[] { "9600", "10400", "4800", "1200", "28800" }, _baudChips, SelectBaud);
         card.AddView(bauds);
         _customBaud = Field("Altă valoare (ex: 10400)", numeric: true);
         _customBaud.TextChanged += (_, _) =>
@@ -881,6 +886,8 @@ public class MainActivity : Activity
     private DashboardView _dash = null!;
     private EditText _dashGroup = null!, _dashRpmMax = null!;
     private readonly System.Collections.Generic.Dictionary<string, (float Val, string Raw)> _chan = new();
+    private DashboardView? _dashFull;
+    private FrameLayout? _dashFullOverlay;
 
     // Canalele cerute: "grup.poziție", etichetă, unitate afișată, maxim scală. Primul = RPM (centru).
     private static readonly (string Ch, string Label, string Unit, float Max)[] DashMap =
@@ -900,22 +907,59 @@ public class MainActivity : Activity
 
     private void RefreshDashboard()
     {
-        if (_dash == null) return;
         var rpmMax = float.TryParse(_dashRpmMax?.Text?.Trim(), out var rm) && rm > 0 ? rm : 7000f;
-
-        // centru = RPM
         var rpm = _chan.TryGetValue(DashMap[0].Ch, out var rv) ? rv.Val : 0;
-        _dash.SetRpm(rpm, rpmMax, rpmMax * 0.85f);
 
-        // 7 gauge-uri
-        for (var i = 1; i < DashMap.Length; i++)
+        foreach (var view in new[] { _dash, _dashFull })
         {
-            var d = DashMap[i];
-            if (_chan.TryGetValue(d.Ch, out var cv))
-                _dash.SetGauge(i - 1, d.Label, cv.Val, d.Unit, d.Max);
-            else
-                _dash.SetGauge(i - 1, d.Label, 0, d.Unit, d.Max);
+            if (view == null) continue;
+            view.SetRpm(rpm, rpmMax, rpmMax * 0.85f);
+            for (var i = 1; i < DashMap.Length; i++)
+            {
+                var d = DashMap[i];
+                var val = _chan.TryGetValue(d.Ch, out var cv) ? cv.Val : 0;
+                view.SetGauge(i - 1, d.Label, val, d.Unit, d.Max);
+            }
         }
+    }
+
+    private void OpenDashFullscreen()
+    {
+        _dashFullOverlay = new FrameLayout(this);
+        _dashFullOverlay.SetBackgroundColor(Color.ParseColor("#05070A"));
+
+        _dashFull = new DashboardView(this) { ShowWatermark = true };
+        _dashFullOverlay.AddView(_dashFull, new FrameLayout.LayoutParams(-1, -1));
+
+        var close = Txt("✕", 24, Color.White, bold: true);
+        close.Gravity = GravityFlags.Center;
+        close.Background = Oval(CCard2);
+        close.Clickable = true;
+        close.Click += (_, _) => CloseDashFullscreen();
+        var lp = new FrameLayout.LayoutParams(Dp(48), Dp(48)) { Gravity = GravityFlags.Top | GravityFlags.End };
+        lp.SetMargins(0, Dp(16), Dp(16), 0);
+        _dashFullOverlay.AddView(close, lp);
+
+        _root.AddView(_dashFullOverlay);
+
+        // landscape + immersive
+        RequestedOrientation = Android.Content.PM.ScreenOrientation.Landscape;
+        if (Window != null)
+        {
+            Window.DecorView.SystemUiVisibility = (StatusBarVisibility)(
+                SystemUiFlags.Immersive | SystemUiFlags.HideNavigation | SystemUiFlags.Fullscreen |
+                SystemUiFlags.LayoutStable | SystemUiFlags.LayoutHideNavigation | SystemUiFlags.LayoutFullscreen);
+        }
+        RefreshDashboard();
+    }
+
+    private void CloseDashFullscreen()
+    {
+        if (_dashFullOverlay != null) _root.RemoveView(_dashFullOverlay);
+        _dashFullOverlay = null;
+        _dashFull = null;
+        RequestedOrientation = Android.Content.PM.ScreenOrientation.Portrait;
+        if (Window != null) Window.DecorView.SystemUiVisibility = (StatusBarVisibility)SystemUiFlags.Visible;
     }
 
     // Avansează spre următorul grup din listă trimițând tasta sus/jos către GroupRead.
@@ -958,6 +1002,10 @@ public class MainActivity : Activity
         btns.AddView(start, new LinearLayout.LayoutParams(0, -2, 1f) { RightMargin = Dp(6) });
         btns.AddView(stop, new LinearLayout.LayoutParams(0, -2, 1f) { LeftMargin = Dp(6) });
         card.AddView(btns, MatchWrap(top: 10));
+
+        var full = BigButton("⛶  FULL SCREEN", CCard2);
+        full.Click += (_, _) => OpenDashFullscreen();
+        card.AddView(full, MatchWrap(top: 10));
 
         var note = Txt("Citește automat grupurile 1, 2, 3 și 21. Canale: 2-1 RPM, 1-2 timp inj, 1-4 unghi inj, " +
                        "2-4 masă aer, 3-2 baterie, 3-4 temp aer, 21-3 temp apă, 1-3 pedală. " +
